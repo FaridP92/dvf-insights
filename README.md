@@ -8,6 +8,7 @@ pipeline ETL n8n, base PostgreSQL Supabase, déploiement continu Vercel.
 |---|---|
 | Dépôt | https://github.com/FaridP92/dvf-insights |
 | Production | https://dvf-insights.vercel.app |
+| Supabase | projet `ntfeumptvwcrwoxzprbb` (eu-west-3), API https://ntfeumptvwcrwoxzprbb.supabase.co |
 | Workflow n8n | https://n8n.lyfh.fr/workflow/PR0xIuYH9y68zOVc |
 | Stratégie data | [docs/DATA_STRATEGY.md](docs/DATA_STRATEGY.md) |
 | Pipeline | [docs/N8N_PIPELINE.md](docs/N8N_PIPELINE.md) · [supabase/README.md](supabase/README.md) |
@@ -54,7 +55,7 @@ docs/             stratégie data, pipeline n8n
 - **Feature-based** : chaque page possède ses composants, hooks et calculs ; `shared/` ne contient que ce qui est réellement partagé.
 - **Calculs purs et testés** : toute transformation vit dans `lib/` ou `features/*/lib/` et est couverte par Vitest ; les composants ne font que rendre.
 - **Erreurs** : aucune couche data ne lance ; tout renvoie `Result<T, AppError>` (`network` · `supabase` · `validation` · `sync` · `unknown`, avec `retryable`). L'UI a trois états explicites : chargement, erreur (avec réessai), succès.
-- **Mock / live** : sans `VITE_SUPABASE_URL`, l'application sert des mocks typés déterministes qui partagent exactement les types des vues SQL. Le badge "Source" de la sidebar indique le mode.
+- **Mock / live** : sans `VITE_SUPABASE_URL`, l'application sert des mocks typés déterministes qui partagent exactement les types des vues SQL. Le badge "Source" de la sidebar indique le mode. La production tourne en mode live sur le projet Supabase du tableau ci-dessus (20 000 mutations de démonstration chargées en base, en attendant la première ingestion n8n réelle).
 
 ## Modèle de données
 
@@ -96,7 +97,7 @@ Scripts : `dev` · `build` · `preview` · `typecheck` · `lint` · `test` · `t
 
 ## CI/CD
 
-Chaque push sur `main` déclenche un build Vercel (framework Vite, `vercel.json` : rewrites SPA, cache immuable `/assets`, `X-Frame-Options`, `nosniff`, `Referrer-Policy`). Variables à définir dans Vercel pour le mode live : `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`.
+Chaque push sur `main` déclenche un build Vercel (framework Vite, `vercel.json` : rewrites SPA, cache immuable `/assets`, `X-Frame-Options`, `nosniff`, `Referrer-Policy`). Variables définies dans Vercel (tous environnements) : `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` (clé publique, prévue pour être exposée au navigateur ; l'accès aux données est borné par la RLS).
 
 ## Conventions
 

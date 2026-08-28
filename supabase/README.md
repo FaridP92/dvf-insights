@@ -1,5 +1,9 @@
 # Supabase : déploiement
 
+État actuel : projet `ntfeumptvwcrwoxzprbb` (région eu-west-3) créé le 28 août 2026, migrations 0001 à 0003 appliquées, Edge Functions `ingest-dvf` et `pipeline-status` déployées (auth custom, `verify_jwt` désactivé). Reste à poser le secret `N8N_WEBHOOK_SECRET` (Dashboard > Edge Functions > Secrets) et le même secret dans le credential Header Auth n8n.
+
+Pour redéployer ou répliquer :
+
 ```bash
 supabase login
 supabase link --project-ref <ref>

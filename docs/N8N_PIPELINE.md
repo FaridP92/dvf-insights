@@ -23,7 +23,7 @@ Schedule (le 5 de chaque mois, 03:00)
 
 ## Configuration à faire une fois
 
-1. Nœud "Parametres du run" : remplacer `https://VOTRE-PROJET.supabase.co`.
+1. Nœud "Parametres du run" : `supabaseUrl` est déjà renseigné (`https://ntfeumptvwcrwoxzprbb.supabase.co`).
 2. Credential **Header Auth** nommé "Supabase webhook secret (x-webhook-secret)" :
    nom d'en-tête `x-webhook-secret`, valeur = le secret `N8N_WEBHOOK_SECRET` des Edge Functions.
    L'assigner aux 3 nœuds HTTP qui appellent Supabase (pas au téléchargement data.gouv).

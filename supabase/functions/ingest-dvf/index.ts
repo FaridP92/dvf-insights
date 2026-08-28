@@ -37,6 +37,8 @@ const payloadSchema = z.object({
   rows: z.array(z.unknown()).max(5000),
   final: z.boolean().optional(),
   period: z.object({ from: z.string(), to: z.string() }).optional(),
+  // Premier lot d'un département : purge (millésime, département) avant insertion, idempotence
+  reset: z.object({ from: z.string(), to: z.string(), department: z.string() }).optional(),
 });
 
 Deno.serve(async (req) => {
@@ -68,7 +70,7 @@ Deno.serve(async (req) => {
     await logEvent(400, null);
     return json(400, { error: 'Payload invalide', issues: parsed.error.issues.slice(0, 5) });
   }
-  const { workflowName, rows, final, period } = parsed.data;
+  const { workflowName, rows, final, period, reset } = parsed.data;
 
   // Ouverture ou reprise du run
   let runId = parsed.data.runId ?? null;
@@ -92,6 +94,14 @@ Deno.serve(async (req) => {
     const result = rowSchema.safeParse(row);
     if (result.success) valid.push(result.data);
     else rejected += 1;
+  }
+
+  if (reset) {
+    await supabase.rpc('purge_department', {
+      p_from: reset.from,
+      p_to: reset.to,
+      p_department: reset.department,
+    });
   }
 
   if (valid.length > 0) {

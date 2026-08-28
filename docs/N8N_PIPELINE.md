@@ -1,25 +1,38 @@
 # Orchestration n8n
 
-Workflow créé via MCP : **DVF Insights - Ingestion mensuelle DVF**
-https://n8n.lyfh.fr/workflow/PR0xIuYH9y68zOVc (12 nœuds)
+Deux workflows créés via MCP :
+- **DVF Insights - Ingestion mensuelle DVF** (orchestrateur) : https://n8n.lyfh.fr/workflow/PR0xIuYH9y68zOVc
+- **DVF Insights - Ingestion d un departement** (sous-workflow) : https://n8n.lyfh.fr/workflow/NmOeXUv5Cet7H4aQ
+
+Pourquoi un sous-workflow : un fichier départemental fait 20 000 à 60 000 lignes une fois parsé ;
+tout garder dans une seule exécution a fait crasher n8n (mémoire) au 5e département. Chaque
+département tourne dans sa propre exécution, dont la mémoire est libérée à la fin.
 
 ## Flux
 
 ```
 Schedule (le 5 de chaque mois, 03:00)
   -> Paramètres du run (supabaseUrl, année, période, 12 départements)
-  -> POST pipeline-status { action: "start", period }   -> runId (purge de la période : idempotence)
+  -> POST pipeline-status { action: "start" }           -> runId
   -> Code : 1 item par département (URL geo-DVF)
   -> Loop Over Items (batch 1)
-       -> GET files.data.gouv.fr/geo-dvf/latest/csv/{année}/departements/{dep}.csv.gz (binaire)
-       -> Compression : gunzip
-       -> Extract from File : CSV (relaxQuotes, skip erreurs)
-       -> Code : filtre Appartement/Maison, normalise les colonnes, lots de 5 000 lignes
-       -> POST ingest-dvf { runId, rows, final: false }  (1 requête par lot, 500 ms d'espacement)
+       -> Execute Sub-workflow "Ingestion d un departement" (attend la fin)
+            -> GET files.data.gouv.fr/geo-dvf/latest/csv/{millésime}/departements/{dep}.csv.gz
+            -> Compression : gunzip
+            -> Extract from File : CSV (relaxQuotes, skip erreurs)
+            -> Code : filtre Appartement/Maison, normalise, lots de 5 000 ; le 1er lot porte
+               reset = { millésime, département } : ingest-dvf purge ce couple avant d'insérer
+            -> POST ingest-dvf { runId, rows, reset?, final: false }  (1 requête par lot)
        -> retour boucle
      done -> POST ingest-dvf { runId, rows: [], final: true, period }
              = refresh_clean_mutations(period) + refresh_materialized_views() + clôture du run
 ```
+
+## Millésime
+
+Les fichiers geo-DVF de l'année N ne sont publiés qu'à partir d'octobre N (puis complétés en avril N+1).
+Le workflow vise donc l'année en cours à partir d'octobre, l'année précédente sinon, et remplace
+intégralement ce millésime à chaque run : les runs sont idempotents, département par département.
 
 ## Configuration à faire une fois
 

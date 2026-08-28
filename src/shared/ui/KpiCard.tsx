@@ -25,7 +25,7 @@ export function KpiCard({
   className,
 }: KpiCardProps) {
   return (
-    <div className={cn('card relative overflow-hidden p-5', className)}>
+    <div className={cn('card relative overflow-hidden p-5', sparkline && 'pb-14', className)}>
       <div className="flex items-center justify-between gap-2">
         <p className="text-xs font-medium uppercase tracking-wide text-fg-muted">{label}</p>
         {Icon && <Icon className="size-4 text-fg-subtle" aria-hidden />}
@@ -35,7 +35,7 @@ export function KpiCard({
         {change !== undefined && <Trend value={change} positiveIsGood={positiveIsGood} />}
         {hint && <span className="truncate text-xs text-fg-subtle">{hint}</span>}
       </div>
-      {sparkline && <div className="pointer-events-none absolute inset-x-0 bottom-0 h-12 opacity-70">{sparkline}</div>}
+      {sparkline && <div className="pointer-events-none absolute inset-x-0 bottom-0 h-10 opacity-60">{sparkline}</div>}
     </div>
   );
 }

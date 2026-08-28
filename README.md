@@ -7,7 +7,7 @@ pipeline ETL n8n, base PostgreSQL Supabase, déploiement continu Vercel.
 | | |
 |---|---|
 | Dépôt | https://github.com/FaridP92/dvf-insights |
-| Production | _(déploiement Vercel : voir section CI/CD)_ |
+| Production | https://dvf-insights.vercel.app |
 | Workflow n8n | https://n8n.lyfh.fr/workflow/PR0xIuYH9y68zOVc |
 | Stratégie data | [docs/DATA_STRATEGY.md](docs/DATA_STRATEGY.md) |
 | Pipeline | [docs/N8N_PIPELINE.md](docs/N8N_PIPELINE.md) · [supabase/README.md](supabase/README.md) |

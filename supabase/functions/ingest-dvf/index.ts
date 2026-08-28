@@ -39,6 +39,8 @@ const payloadSchema = z.object({
   period: z.object({ from: z.string(), to: z.string() }).optional(),
   // Premier lot d'un département : purge (millésime, département) avant insertion, idempotence
   reset: z.object({ from: z.string(), to: z.string(), department: z.string() }).optional(),
+  // Dernier lot d'un département : enfile le job de nettoyage/agrégation/purge de ce département
+  departmentDone: z.object({ from: z.string(), to: z.string(), department: z.string() }).optional(),
 });
 
 Deno.serve(async (req) => {
@@ -70,7 +72,7 @@ Deno.serve(async (req) => {
     await logEvent(400, null);
     return json(400, { error: 'Payload invalide', issues: parsed.error.issues.slice(0, 5) });
   }
-  const { workflowName, rows, final, period, reset } = parsed.data;
+  const { workflowName, rows, final, period, reset, departmentDone } = parsed.data;
 
   // Ouverture ou reprise du run
   let runId = parsed.data.runId ?? null;
@@ -122,6 +124,17 @@ Deno.serve(async (req) => {
     p_rejected: rejected,
   });
 
+  let departmentJob: string | null = null;
+  if (departmentDone) {
+    const { data } = await supabase.rpc('enqueue_department_job', {
+      p_run_id: runId,
+      p_from: departmentDone.from,
+      p_to: departmentDone.to,
+      p_department: departmentDone.department,
+    });
+    departmentJob = typeof data === 'string' ? data : null;
+  }
+
   // Dernier lot : le nettoyage et le rafraîchissement des vues sont asynchrones (pg_cron),
   // le run reste "running" avec stage = refresh jusqu'à ce que le job le clôture.
   let jobId: string | null = null;
@@ -146,5 +159,5 @@ Deno.serve(async (req) => {
   }
 
   await logEvent(200, runId);
-  return json(200, { runId, ingested: valid.length, rejected, maintenanceJob: jobId, final: final ?? false });
+  return json(200, { runId, ingested: valid.length, rejected, departmentJob, maintenanceJob: jobId, final: final ?? false });
 });

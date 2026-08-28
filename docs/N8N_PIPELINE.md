@@ -8,7 +8,7 @@ https://n8n.lyfh.fr/workflow/PR0xIuYH9y68zOVc (12 nœuds)
 ```
 Schedule (le 5 de chaque mois, 03:00)
   -> Paramètres du run (supabaseUrl, année, période, 12 départements)
-  -> POST pipeline-status { action: "start" }           -> runId
+  -> POST pipeline-status { action: "start", period }   -> runId (purge de la période : idempotence)
   -> Code : 1 item par département (URL geo-DVF)
   -> Loop Over Items (batch 1)
        -> GET files.data.gouv.fr/geo-dvf/latest/csv/{année}/departements/{dep}.csv.gz (binaire)

@@ -8,7 +8,12 @@ import { z } from 'npm:zod@4';
 import { json, verifyWebhook } from '../_shared/auth.ts';
 
 const schema = z.discriminatedUnion('action', [
-  z.object({ action: z.literal('start'), workflowName: z.string().min(1) }),
+  z.object({
+    action: z.literal('start'),
+    workflowName: z.string().min(1),
+    // Si une période est fournie, elle est purgée avant ré-ingestion (idempotence des runs)
+    period: z.object({ from: z.string(), to: z.string() }).optional(),
+  }),
   z.object({
     action: z.literal('finish'),
     runId: z.string().uuid(),
@@ -55,8 +60,16 @@ Deno.serve(async (req) => {
       await logEvent(500, null);
       return json(500, { error: error?.message });
     }
+    let purged: number | null = null;
+    if (parsed.data.period) {
+      const { data: removed } = await supabase.rpc('purge_period', {
+        p_from: parsed.data.period.from,
+        p_to: parsed.data.period.to,
+      });
+      purged = typeof removed === 'number' ? removed : null;
+    }
     await logEvent(200, data.id as string);
-    return json(200, { runId: data.id });
+    return json(200, { runId: data.id, purged });
   }
 
   const { runId, status, errorMessage, metadata } = parsed.data;

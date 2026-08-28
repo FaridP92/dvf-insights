@@ -42,7 +42,7 @@ intégralement ce millésime à chaque run : les runs sont idempotents, départe
 2. Credential **Header Auth** nommé "Supabase webhook secret (x-webhook-secret)" :
    nom d'en-tête `x-webhook-secret`, valeur = le secret `N8N_WEBHOOK_SECRET` des Edge Functions.
    L'assigner aux 3 nœuds HTTP qui appellent Supabase (pas au téléchargement data.gouv).
-3. Activer le workflow.
+3. Activer le workflow (fait le 28 août 2026 : planification mensuelle active).
 
 ## Pourquoi le nettoyage est asynchrone
 

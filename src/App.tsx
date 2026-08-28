@@ -1,3 +1,6 @@
-export function App(): JSX.Element {
-  return <main className="p-8 text-fg-muted">DVF Insights : socle en cours de construction.</main>;
+import { RouterProvider } from 'react-router-dom';
+import { router } from './app/router';
+
+export function App() {
+  return <RouterProvider router={router} />;
 }

@@ -163,7 +163,7 @@ export default function OverviewPage() {
 
         <Card
           title="Évolution comparée (base 100)"
-          subtitle="Une courbe par région, chacune à 100 sur son premier mois : on compare des trajectoires, pas des niveaux. Le département sélectionné se superpose en accent."
+          subtitle="Régions métropolitaines à 100 sur le premier mois, lissées sur trois mois. En couleur : les deux régions les plus dynamiques et les deux plus faibles ; le département sélectionné se superpose en accent."
         >
           {monthly.status === 'loading' && <ChartSkeleton height={300} />}
           {monthly.status === 'error' && (

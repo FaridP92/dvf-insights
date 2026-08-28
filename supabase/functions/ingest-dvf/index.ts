@@ -146,10 +146,7 @@ Deno.serve(async (req) => {
         p_to: period.to,
       });
       jobId = typeof data === 'string' ? data : null;
-      await supabase
-        .from('pipeline_runs')
-        .update({ metadata: { stage: 'refresh', maintenance_job: jobId } })
-        .eq('id', runId);
+      await supabase.rpc('mark_run_refresh', { p_run_id: runId, p_job_id: jobId });
     } else {
       await supabase
         .from('pipeline_runs')

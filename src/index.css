@@ -1,0 +1,68 @@
+@import 'tailwindcss';
+
+/*
+ * Design system sombre, minimaliste.
+ * Une couleur d'accent (émeraude) pour le positif/actif, ambre pour l'alerte, rose pour l'erreur.
+ * Tout le reste vit dans une échelle de gris bleutés pour laisser la donnée au premier plan.
+ */
+@theme {
+  --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+
+  --color-bg: #0a0d14;
+  --color-surface: #111521;
+  --color-surface-2: #171c2b;
+  --color-border: #232a3d;
+  --color-border-strong: #2f3852;
+
+  --color-fg: #e6e9f2;
+  --color-fg-muted: #98a2b8;
+  --color-fg-subtle: #5d6780;
+
+  --color-accent: #34d399;
+  --color-accent-strong: #10b981;
+  --color-accent-soft: rgba(52, 211, 153, 0.12);
+  --color-warn: #fbbf24;
+  --color-warn-soft: rgba(251, 191, 36, 0.12);
+  --color-danger: #fb7185;
+  --color-danger-soft: rgba(251, 113, 133, 0.12);
+  --color-info: #60a5fa;
+  --color-info-soft: rgba(96, 165, 250, 0.12);
+
+  /* Palette séquentielle pour les séries multiples (ordonnée par contraste perceptif) */
+  --color-series-1: #34d399;
+  --color-series-2: #60a5fa;
+  --color-series-3: #f472b6;
+  --color-series-4: #fbbf24;
+  --color-series-5: #a78bfa;
+  --color-series-6: #f97316;
+}
+
+@layer base {
+  html {
+    color-scheme: dark;
+    font-feature-settings: 'cv11', 'ss01', 'tnum';
+  }
+  body {
+    @apply bg-bg text-fg antialiased;
+  }
+  ::selection {
+    @apply bg-accent/30;
+  }
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-border-strong) transparent;
+  }
+}
+
+@layer utilities {
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+  .card {
+    @apply rounded-xl border border-border bg-surface;
+  }
+  .focus-ring {
+    @apply outline-none focus-visible:ring-2 focus-visible:ring-accent/60 focus-visible:ring-offset-2 focus-visible:ring-offset-bg;
+  }
+}

@@ -136,19 +136,20 @@ export function EstimatorCard({
       ) : (
         <div className="flex flex-col gap-5">
           <div className="flex flex-col gap-3">
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-col gap-2">
               <SearchableSelect
                 value={department}
                 onChange={setDepartment}
                 options={departmentOptions}
                 ariaLabel="Département du bien"
+                className="w-full"
               />
               <SearchableSelect
                 value={activeCommune}
                 onChange={setInseeCode}
                 options={communeOptions}
                 ariaLabel="Commune du bien"
-                className="min-w-0 flex-1"
+                className="w-full"
               />
             </div>
 

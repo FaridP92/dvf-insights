@@ -31,7 +31,7 @@ export function KpiCard({
         {Icon && <Icon className="size-4 text-fg-subtle" aria-hidden />}
       </div>
       <p className="mt-2 text-2xl font-semibold tabular text-fg">{value}</p>
-      <div className="mt-2 flex items-center gap-2">
+      <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1">
         {change !== undefined && <Trend value={change} positiveIsGood={positiveIsGood} />}
         {hint && <span className="truncate text-xs text-fg-subtle">{hint}</span>}
       </div>

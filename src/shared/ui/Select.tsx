@@ -11,12 +11,12 @@ interface SelectProps<T extends string> {
 
 export function Select<T extends string>({ value, onChange, options, ariaLabel, className }: SelectProps<T>) {
   return (
-    <div className={cn('relative inline-flex', className)}>
+    <div className={cn('relative inline-flex min-w-0', className)}>
       <select
         aria-label={ariaLabel}
         value={value}
         onChange={(event) => onChange(event.target.value as T)}
-        className="focus-ring appearance-none rounded-lg border border-border bg-surface py-1.5 pl-3 pr-8 text-xs font-medium text-fg hover:border-border-strong"
+        className="focus-ring w-full min-w-0 appearance-none truncate rounded-lg border border-border bg-surface py-1.5 pl-3 pr-8 text-xs font-medium text-fg hover:border-border-strong"
       >
         {options.map((option) => (
           <option key={option.value} value={option.value}>

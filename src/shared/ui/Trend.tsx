@@ -20,7 +20,7 @@ export function Trend({ value, positiveIsGood = true, className, label = 'vs N-1
   return (
     <span
       className={cn(
-        'inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-medium tabular',
+        'inline-flex items-center gap-1 whitespace-nowrap rounded-md px-1.5 py-0.5 text-xs font-medium tabular',
         good === null && 'bg-surface-2 text-fg-muted',
         good === true && 'bg-accent-soft text-accent',
         good === false && 'bg-danger-soft text-danger',

@@ -122,14 +122,14 @@ export const COMMUNES: Readonly<Record<string, readonly CommuneSeed[]>> = {
     { inseeCode: '35360', name: 'Vitré', lat: 48.1244, lng: -1.21 },
     { inseeCode: '35278', name: 'Saint-Grégoire', lat: 48.1439, lng: -1.6892 },
   ],
-  '67': [
-    { inseeCode: '67482', name: 'Strasbourg', lat: 48.5734, lng: 7.7521 },
-    { inseeCode: '67447', name: 'Schiltigheim', lat: 48.6058, lng: 7.7472 },
-    { inseeCode: '67218', name: 'Illkirch-Graffenstaden', lat: 48.5306, lng: 7.7156 },
-    { inseeCode: '67180', name: 'Haguenau', lat: 48.8156, lng: 7.7906 },
-    { inseeCode: '67462', name: 'Sélestat', lat: 48.2597, lng: 7.4536 },
-    { inseeCode: '67267', name: 'Lingolsheim', lat: 48.5578, lng: 7.6817 },
-    { inseeCode: '67348', name: 'Obernai', lat: 48.4622, lng: 7.4817 },
+  '38': [
+    { inseeCode: '38185', name: 'Grenoble', lat: 45.1885, lng: 5.7245 },
+    { inseeCode: '38151', name: 'Échirolles', lat: 45.1434, lng: 5.7222 },
+    { inseeCode: '38421', name: 'Saint-Martin-d\'Hères', lat: 45.1667, lng: 5.7667 },
+    { inseeCode: '38229', name: 'Meylan', lat: 45.2094, lng: 5.7789 },
+    { inseeCode: '38544', name: 'Vienne', lat: 45.5253, lng: 4.8744 },
+    { inseeCode: '38053', name: 'Bourgoin-Jallieu', lat: 45.5861, lng: 5.2736 },
+    { inseeCode: '38563', name: 'Voiron', lat: 45.3642, lng: 5.5911 },
   ],
   '34': [
     { inseeCode: '34172', name: 'Montpellier', lat: 43.6108, lng: 3.8767 },

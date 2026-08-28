@@ -51,6 +51,17 @@ Deno.serve(async (req) => {
   }
 
   if (parsed.data.action === 'start') {
+    // Un seul run actif par workflow : les runs orphelins (n8n interrompu) sont clos en échec.
+    await supabase
+      .from('pipeline_runs')
+      .update({
+        status: 'failed',
+        finished_at: new Date().toISOString(),
+        error_message: 'Run orphelin clos automatiquement au démarrage du run suivant',
+      })
+      .eq('workflow_name', parsed.data.workflowName)
+      .eq('status', 'running');
+
     const { data, error } = await supabase
       .from('pipeline_runs')
       .insert({ workflow_name: parsed.data.workflowName, status: 'running' })

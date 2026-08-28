@@ -57,7 +57,14 @@ est déclenché par n8n en fin d'ingestion, donc la fraîcheur est celle du pipe
 - **Chiffres tabulaires** (`tnum`) partout : les colonnes de nombres s'alignent.
 - **États explicites** : chargement (squelette), erreur (message + réessayer), vide.
 
-## 5. Mocks
+## 5. Périmètre géographique
+
+Douze départements de référence : 75, 92, 69, 33, 13, 31, 44, 59, 06, 35, 38, 34.
+L'Alsace-Moselle (57, 67, 68) est exclue par construction : ces départements relèvent du
+Livre foncier et ne sont pas publiés dans DVF (un premier choix incluant le 67 a échoué en
+ingestion, fichier inexistant).
+
+## 6. Mocks
 
 Les jeux mock sont générés de façon déterministe (générateur pseudo-aléatoire à graine) à
 partir de niveaux de prix réalistes par département, avec saisonnalité et tendance. Ils

@@ -55,7 +55,7 @@ docs/             stratégie data, pipeline n8n
 - **Feature-based** : chaque page possède ses composants, hooks et calculs ; `shared/` ne contient que ce qui est réellement partagé.
 - **Calculs purs et testés** : toute transformation vit dans `lib/` ou `features/*/lib/` et est couverte par Vitest ; les composants ne font que rendre.
 - **Erreurs** : aucune couche data ne lance ; tout renvoie `Result<T, AppError>` (`network` · `supabase` · `validation` · `sync` · `unknown`, avec `retryable`). L'UI a trois états explicites : chargement, erreur (avec réessai), succès.
-- **Mock / live** : sans `VITE_SUPABASE_URL`, l'application sert des mocks typés déterministes qui partagent exactement les types des vues SQL. Le badge "Source" de la sidebar indique le mode. La production tourne en mode live sur le projet Supabase du tableau ci-dessus (20 000 mutations de démonstration chargées en base, en attendant la première ingestion n8n réelle).
+- **Mock / live** : sans `VITE_SUPABASE_URL`, l'application sert des mocks typés déterministes qui partagent exactement les types des vues SQL. Le badge "Source" de la sidebar indique le mode. La production tourne en mode live sur le projet Supabase du tableau ci-dessus : **965 484 mutations DVF réelles** (millésimes 2023 à 2025, 12 départements) ingérées par le pipeline n8n, dont 698 322 retenues après nettoyage, agrégées sur 36 mois et 1 337 communes.
 
 ## Modèle de données
 

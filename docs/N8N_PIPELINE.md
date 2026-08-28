@@ -23,11 +23,12 @@ Schedule (le 5 de chaque mois, 03:00)
             -> Code : filtre Appartement/Maison, normalise, lots de 5 000 ; le 1er lot porte
                reset = { millésime, département } : ingest-dvf purge ce couple avant d'insérer
             -> POST ingest-dvf { runId, rows, reset?, final: false }  (1 requête par lot)
+            -> POST ingest-dvf { runId, rows: [], departmentDone }    (job pg_cron : nettoyage,
+               agrégats monthly_stats / commune_yearly_stats, puis purge du brut du département)
        -> retour boucle
      done -> POST ingest-dvf { runId, rows: [], final: true, period }
-             = enqueue_maintenance(run, period) : le run passe en stage "refresh"
-                pg_cron (chaque minute) -> process_maintenance_jobs()
-                  = refresh_clean_mutations(period) + refresh des vues + clôture du run (success / failed)
+             = job "finalize" : rétention (détail 12 mois, agrégats 36 mois), reconstruction
+               de commune_stats, clôture du run (success / failed)
 ```
 
 ## Millésime
@@ -43,6 +44,17 @@ intégralement ce millésime à chaque run : les runs sont idempotents, départe
    nom d'en-tête `x-webhook-secret`, valeur = le secret `N8N_WEBHOOK_SECRET` des Edge Functions.
    L'assigner aux 3 nœuds HTTP qui appellent Supabase (pas au téléchargement data.gouv).
 3. Activer le workflow (fait le 28 août 2026 : planification mensuelle active).
+
+## Périmètre national et stockage frugal (plan Free, 500 Mo)
+
+97 départements DVF (métropole hors Alsace-Moselle, plus 971 à 974), soit environ 3,5 millions
+de lignes brutes par millésime. Pour tenir dans 500 Mo :
+- le brut est un **tampon** : chaque département est nettoyé, agrégé puis purgé dès sa réception
+  (job pg_cron par département) ; le tampon ne contient jamais plus d'un département en transit ;
+- le **détail nettoyé** est conservé 12 mois glissants (explorateur, simulateur, anomalies) ;
+- l'**historique 36 mois** vit dans `monthly_stats` (département × mois × type) et
+  `commune_yearly_stats` ; `commune_stats` est reconstruite à chaque clôture.
+Un run national dure environ 40 minutes (timeout n8n : 1 h).
 
 ## Pourquoi le nettoyage est asynchrone
 

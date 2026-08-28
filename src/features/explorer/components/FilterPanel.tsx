@@ -114,8 +114,8 @@ export function FilterPanel({
       aria-label="Filtres de l'explorateur"
       className="card mb-6 flex flex-col gap-4 p-4 md:p-5"
     >
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-6">
-        <div>
+      <div className="flex flex-wrap items-end gap-x-6 gap-y-4">
+        <div className="w-full sm:w-64">
           <FieldLabel>Département</FieldLabel>
           <SearchableSelect
             value={department}
@@ -126,7 +126,7 @@ export function FilterPanel({
           />
         </div>
 
-        <div>
+        <div className="shrink-0">
           <FieldLabel>Type de bien</FieldLabel>
           <Segmented
             value={filters.propertyType}
@@ -136,7 +136,7 @@ export function FilterPanel({
           />
         </div>
 
-        <div>
+        <div className="w-full sm:w-52">
           <FieldLabel>Surface (m²)</FieldLabel>
           <div className="flex items-center gap-2">
             <NumberInput
@@ -159,7 +159,7 @@ export function FilterPanel({
           </div>
         </div>
 
-        <div>
+        <div className="w-full sm:w-56">
           <FieldLabel>Prix (€)</FieldLabel>
           <div className="flex items-center gap-2">
             <NumberInput
@@ -182,7 +182,7 @@ export function FilterPanel({
           </div>
         </div>
 
-        <div>
+        <div className="shrink-0">
           <FieldLabel>Pièces</FieldLabel>
           <Segmented
             value={filters.rooms}
@@ -192,7 +192,7 @@ export function FilterPanel({
           />
         </div>
 
-        <div>
+        <div className="shrink-0">
           <FieldLabel>Période</FieldLabel>
           <Select
             value={filters.period}

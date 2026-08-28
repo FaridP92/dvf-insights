@@ -24,6 +24,8 @@ export default defineConfig({
     environment: 'jsdom',
     globals: true,
     setupFiles: ['./src/test/setup.ts'],
+    // Les tests tournent toujours sur les mocks, même si un .env.local pointe vers Supabase.
+    env: { VITE_SUPABASE_URL: '', VITE_SUPABASE_ANON_KEY: '' },
     include: ['src/**/*.test.{ts,tsx}'],
     coverage: { reporter: ['text', 'html'], include: ['src/lib/**', 'src/shared/**'] },
   },

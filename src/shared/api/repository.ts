@@ -31,6 +31,7 @@ import { getSupabase } from './supabase';
  */
 
 const TRANSACTIONS_LIMIT = 2500;
+const SUPABASE_PAGE_SIZE = 1000;
 const PIPELINE_RUNS_LIMIT = 50;
 const WEBHOOK_EVENTS_LIMIT = 200;
 
@@ -235,16 +236,29 @@ export function fetchTransactions(signal?: AbortSignal): Promise<Result<readonly
     const supabase = getSupabase();
     if (!supabase) return await fromMock(mockTransactions, signal);
 
-    let query = supabase
-      .from('dvf_mutations_clean')
-      .select('*')
-      .order('date_mutation', { ascending: false })
-      .limit(TRANSACTIONS_LIMIT);
-    if (signal) query = query.abortSignal(signal);
-    const { data, error } = await query;
-    throwSupabase('dvf_mutations_clean', error);
+    // PostgREST plafonne chaque réponse à 1 000 lignes (max-rows) : on pagine par tranches
+    // parallèles pour atteindre l'échantillon voulu sans dépendre de la configuration du projet.
+    const ranges: Array<readonly [number, number]> = [];
+    for (let from = 0; from < TRANSACTIONS_LIMIT; from += SUPABASE_PAGE_SIZE) {
+      ranges.push([from, Math.min(from + SUPABASE_PAGE_SIZE, TRANSACTIONS_LIMIT) - 1]);
+    }
+    const pages = await Promise.all(
+      ranges.map(async ([from, to]) => {
+        let query = supabase
+          .from('dvf_mutations_clean')
+          .select('*')
+          .order('date_mutation', { ascending: false })
+          .order('id', { ascending: true })
+          .range(from, to);
+        if (signal) query = query.abortSignal(signal);
+        const { data, error } = await query;
+        throwSupabase('dvf_mutations_clean', error);
+        return data ?? [];
+      }),
+    );
+    const rows: unknown[] = pages.flat();
 
-    return parseOrThrow(z.array(transactionRow), data ?? [], 'dvf_mutations_clean').map(
+    return parseOrThrow(z.array(transactionRow), rows, 'dvf_mutations_clean').map(
       (row): Transaction => ({
         id: row.id,
         date: row.date_mutation,

@@ -2,14 +2,18 @@ import { z } from 'zod';
 import { appError, tryCatch, type Result } from '@/lib/result';
 import { tensionIndex } from '@/lib/stats/tension';
 import type {
+  Commune,
   CommuneStat,
   DatabaseHealth,
+  Department,
   MonthlyStat,
   PipelineRun,
+  PropertyType,
   Transaction,
   WebhookEvent,
 } from '@/shared/types/dvf';
-import { generateCommuneStats } from '@/shared/mocks/communeStats';
+import { generateCommunes, generateCommuneStats } from '@/shared/mocks/communeStats';
+import { DEPARTMENTS } from '@/shared/mocks/departments';
 import { generateMonthlyStats } from '@/shared/mocks/monthlyStats';
 import {
   generateDatabaseHealth,
@@ -25,18 +29,56 @@ import { getSupabase } from './supabase';
  * mocks directement : ils appellent ce module, qui choisit la source selon la configuration
  * et renvoie toujours la même forme, un Result typé.
  *
- * Côté Supabase, la réponse est validée par Zod avant d'entrer dans l'application : une vue
- * matérialisée qui change de colonne doit produire une erreur explicite, pas un NaN silencieux
+ * Côté Supabase, la réponse est validée par Zod avant d'entrer dans l'application : une table
+ * d'agrégats qui change de colonne doit produire une erreur explicite, pas un NaN silencieux
  * trois écrans plus loin.
+ *
+ * Périmètre national : 97 départements, environ 35 000 communes et 2,3 millions de mutations
+ * nettoyées. Deux règles en découlent. Le détail (`dvf_mutations_clean`) n'est jamais lu sans
+ * filtre de département ou de commune. Et tout ce qui dépasse le millier de lignes est paginé,
+ * PostgREST plafonnant chaque réponse à 1 000 lignes.
  */
 
-const TRANSACTIONS_LIMIT = 2500;
 const SUPABASE_PAGE_SIZE = 1000;
+const TRANSACTIONS_LIMIT = 2500;
+/** 36 mois x 97 départements x 2 types, avec une marge : environ 7 000 lignes. */
+const MONTHLY_STATS_LIMIT = 10_000;
+/** Plafond de sécurité de `commune_stats` : environ 40 000 lignes sur la France entière. */
+const COMMUNE_STATS_LIMIT = 60_000;
+/** Plafond de sécurité du référentiel communal d'un département. */
+const COMMUNES_LIMIT = 5000;
 const PIPELINE_RUNS_LIMIT = 50;
 const WEBHOOK_EVENTS_LIMIT = 200;
 
+/** En deçà de ce volume annuel, la variation d'une commune n'est que du bruit. */
+const MIN_MOVER_TRANSACTIONS = 30;
+
 /** Taux de rotation par défaut quand le parc communal n'est pas disponible côté SQL. */
 const DEFAULT_TURNOVER_RATE = 0.02;
+
+// ---------------------------------------------------------------------------
+// Options de requête. Les champs optionnels acceptent explicitement `undefined` :
+// avec exactOptionalPropertyTypes, c'est ce qui permet aux appelants de passer un
+// filtre calculé sans construire l'objet par morceaux.
+// ---------------------------------------------------------------------------
+
+export interface CommuneStatsOptions {
+  readonly departmentCode?: string | undefined;
+}
+
+export interface TopMoversOptions {
+  /** Nombre de communes retenues de chaque côté du classement. */
+  readonly limit: number;
+  readonly departmentCode?: string | undefined;
+  readonly propertyType?: PropertyType | undefined;
+}
+
+export interface TransactionsOptions {
+  /** Obligatoire : le détail national ne se lit jamais en entier. */
+  readonly departmentCode: string;
+  readonly inseeCode?: string | undefined;
+  readonly limit?: number | undefined;
+}
 
 // ---------------------------------------------------------------------------
 // Mocks mémoïsés : générés au plus une fois par session, jamais à chaque requête.
@@ -49,6 +91,16 @@ const memoize = <T>(factory: () => T): (() => T) => {
   };
 };
 
+const mockDepartments = memoize(
+  (): readonly Department[] =>
+    DEPARTMENTS.map(
+      (profile): Department => ({
+        code: profile.code,
+        name: profile.name,
+        region: profile.region,
+      }),
+    ).toSorted((a, b) => a.code.localeCompare(b.code)),
+);
 const mockMonthlyStats = memoize(generateMonthlyStats);
 const mockCommuneStats = memoize(generateCommuneStats);
 const mockTransactions = memoize(() => generateTransactions());
@@ -78,6 +130,20 @@ async function fromMock<T>(read: () => T, signal?: AbortSignal): Promise<T> {
 // ---------------------------------------------------------------------------
 const propertyTypeSchema = z.enum(['appartement', 'maison']);
 const num = z.coerce.number();
+
+const departmentRow = z.object({
+  code: z.string(),
+  name: z.string(),
+  region: z.string().nullable(),
+});
+
+const communeRow = z.object({
+  insee: z.string(),
+  name: z.string(),
+  department_code: z.string(),
+  lat: num.nullable(),
+  lng: num.nullable(),
+});
 
 const monthlyStatRow = z.object({
   month: z.string(),
@@ -166,20 +232,146 @@ function throwSupabase(source: string, error: { readonly message: string } | nul
 }
 
 // ---------------------------------------------------------------------------
+// Pagination
+// ---------------------------------------------------------------------------
+
+/** Réponse PostgREST, réduite à ce dont la pagination a besoin. */
+type PageResponse = {
+  readonly data: readonly unknown[] | null;
+  readonly error: { readonly message: string } | null;
+};
+
+type PageReader = (from: number, to: number) => PromiseLike<PageResponse>;
+
+const pageRanges = (cap: number): ReadonlyArray<readonly [number, number]> => {
+  const ranges: Array<readonly [number, number]> = [];
+  for (let from = 0; from < cap; from += SUPABASE_PAGE_SIZE) {
+    ranges.push([from, Math.min(from + SUPABASE_PAGE_SIZE, cap) - 1]);
+  }
+  return ranges;
+};
+
+/**
+ * Pagine en parallèle jusqu'à un plafond connu. À réserver aux volumes dont on sait
+ * qu'ils remplissent leurs pages : sinon les requêtes vides sont du réseau gaspillé.
+ */
+async function fetchPagesInParallel(
+  source: string,
+  cap: number,
+  read: PageReader,
+): Promise<readonly unknown[]> {
+  const pages = await Promise.all(
+    pageRanges(cap).map(async ([from, to]) => {
+      const { data, error } = await read(from, to);
+      throwSupabase(source, error);
+      return data ?? [];
+    }),
+  );
+  return pages.flat();
+}
+
+/**
+ * Pagine en série et s'arrête dès qu'une page revient incomplète. C'est la stratégie des
+ * volumes très variables : un département de 400 communes tient en une requête, la France
+ * entière en quarante, sans jamais en émettre une de trop.
+ */
+async function fetchPagesInSequence(
+  source: string,
+  cap: number,
+  read: PageReader,
+): Promise<readonly unknown[]> {
+  const rows: unknown[] = [];
+  for (const [from, to] of pageRanges(cap)) {
+    // Séquentiel par nature : c'est la page précédente qui dit s'il faut en demander une autre.
+    // eslint-disable-next-line no-await-in-loop
+    const { data, error } = await read(from, to);
+    throwSupabase(source, error);
+    const page = data ?? [];
+    rows.push(...page);
+    if (page.length < to - from + 1) break;
+  }
+  return rows;
+}
+
+// ---------------------------------------------------------------------------
 // Requêtes
 // ---------------------------------------------------------------------------
 
+/** Référentiel des départements couverts, trié par code. */
+export function fetchDepartments(signal?: AbortSignal): Promise<Result<readonly Department[]>> {
+  return tryCatch(async () => {
+    const supabase = getSupabase();
+    if (!supabase) return await fromMock(mockDepartments, signal);
+
+    let query = supabase
+      .from('departments')
+      .select('code, name, region')
+      .order('code', { ascending: true });
+    if (signal) query = query.abortSignal(signal);
+    const { data, error } = await query;
+    throwSupabase('departments', error);
+
+    return parseOrThrow(z.array(departmentRow), data ?? [], 'departments').map(
+      (row): Department => ({
+        code: row.code,
+        name: row.name,
+        region: row.region ?? 'Hors région',
+      }),
+    );
+  }, 'supabase');
+}
+
+/** Communes d'un département, triées par nom. */
+export function fetchCommunes(
+  departmentCode: string,
+  signal?: AbortSignal,
+): Promise<Result<readonly Commune[]>> {
+  return tryCatch(async () => {
+    const supabase = getSupabase();
+    if (!supabase) return await fromMock(() => generateCommunes(departmentCode), signal);
+
+    const rows = await fetchPagesInSequence('communes', COMMUNES_LIMIT, (from, to) => {
+      let query = supabase
+        .from('communes')
+        .select('insee, name, department_code, lat, lng')
+        .eq('department_code', departmentCode)
+        .order('name', { ascending: true })
+        .range(from, to);
+      if (signal) query = query.abortSignal(signal);
+      return query;
+    });
+
+    return parseOrThrow(z.array(communeRow), rows, 'communes').map(
+      (row): Commune => ({
+        inseeCode: row.insee,
+        name: row.name,
+        departmentCode: row.department_code,
+        lat: row.lat ?? 0,
+        lng: row.lng ?? 0,
+      }),
+    );
+  }, 'supabase');
+}
+
+/** Agrégats mensuels sur 36 mois, tous départements. */
 export function fetchMonthlyStats(signal?: AbortSignal): Promise<Result<readonly MonthlyStat[]>> {
   return tryCatch(async () => {
     const supabase = getSupabase();
     if (!supabase) return await fromMock(mockMonthlyStats, signal);
 
-    let query = supabase.from('mv_monthly_stats').select('*').order('month', { ascending: true });
-    if (signal) query = query.abortSignal(signal);
-    const { data, error } = await query;
-    throwSupabase('mv_monthly_stats', error);
+    const rows = await fetchPagesInParallel('monthly_stats', MONTHLY_STATS_LIMIT, (from, to) => {
+      let query = supabase
+        .from('monthly_stats')
+        .select('*')
+        .order('month', { ascending: true })
+        .order('department_code', { ascending: true })
+        .order('property_type', { ascending: true })
+        .range(from, to);
+      if (signal) query = query.abortSignal(signal);
+      return query;
+    });
 
-    return parseOrThrow(z.array(monthlyStatRow), data ?? [], 'mv_monthly_stats').map(
+    return parseOrThrow(z.array(monthlyStatRow), rows, 'monthly_stats').map(
       (row): MonthlyStat => ({
         month: row.month,
         departmentCode: row.department_code,
@@ -195,68 +387,159 @@ export function fetchMonthlyStats(signal?: AbortSignal): Promise<Result<readonly
   }, 'supabase');
 }
 
-export function fetchCommuneStats(signal?: AbortSignal): Promise<Result<readonly CommuneStat[]>> {
+/**
+ * Convertit une ligne `commune_stats` en agrégat communal.
+ * La table ne porte pas le parc communal : à défaut, on retient le taux de rotation
+ * national de référence, ce qui neutralise la composante liquidité de l'indice de tension.
+ */
+function toCommuneStat(row: z.infer<typeof communeStatRow>): CommuneStat {
+  const yoyChange = row.yoy_change ?? 0;
+  return {
+    inseeCode: row.insee_code,
+    communeName: row.commune_name,
+    departmentCode: row.department_code,
+    propertyType: row.property_type,
+    transactions: row.transactions,
+    medianPricePerSqm: row.median_price_per_sqm,
+    yoyChange,
+    tensionIndex: tensionIndex({
+      volumeChange: row.volume_change ?? 0,
+      priceChange: yoyChange,
+      turnoverRate: DEFAULT_TURNOVER_RATE,
+    }),
+    lat: row.lat ?? 0,
+    lng: row.lng ?? 0,
+  };
+}
+
+/**
+ * Agrégats communaux sur 12 mois glissants. Sans filtre de département, la table pèse
+ * environ 40 000 lignes : réservé aux usages qui en ont réellement besoin.
+ */
+export function fetchCommuneStats(
+  options: CommuneStatsOptions = {},
+  signal?: AbortSignal,
+): Promise<Result<readonly CommuneStat[]>> {
   return tryCatch(async () => {
     const supabase = getSupabase();
-    if (!supabase) return await fromMock(mockCommuneStats, signal);
+    if (!supabase) {
+      return await fromMock(() => {
+        const rows = mockCommuneStats();
+        return options.departmentCode === undefined
+          ? rows
+          : rows.filter((row) => row.departmentCode === options.departmentCode);
+      }, signal);
+    }
 
-    let query = supabase.from('mv_commune_stats').select('*');
-    if (signal) query = query.abortSignal(signal);
-    const { data, error } = await query;
-    throwSupabase('mv_commune_stats', error);
+    const rows = await fetchPagesInSequence('commune_stats', COMMUNE_STATS_LIMIT, (from, to) => {
+      let query = supabase.from('commune_stats').select('*');
+      if (options.departmentCode !== undefined) {
+        query = query.eq('department_code', options.departmentCode);
+      }
+      query = query
+        .order('insee_code', { ascending: true })
+        .order('property_type', { ascending: true })
+        .range(from, to);
+      if (signal) query = query.abortSignal(signal);
+      return query;
+    });
 
-    return parseOrThrow(z.array(communeStatRow), data ?? [], 'mv_commune_stats').map(
-      (row): CommuneStat => {
-        const yoyChange = row.yoy_change ?? 0;
-        // La vue ne porte pas le parc communal : à défaut, on retient le taux de rotation
-        // national de référence, ce qui neutralise la composante liquidité de l'indice.
-        return {
-          inseeCode: row.insee_code,
-          communeName: row.commune_name,
-          departmentCode: row.department_code,
-          propertyType: row.property_type,
-          transactions: row.transactions,
-          medianPricePerSqm: row.median_price_per_sqm,
-          yoyChange,
-          tensionIndex: tensionIndex({
-            volumeChange: row.volume_change ?? 0,
-            priceChange: yoyChange,
-            turnoverRate: DEFAULT_TURNOVER_RATE,
-          }),
-          lat: row.lat ?? 0,
-          lng: row.lng ?? 0,
-        };
-      },
-    );
+    return parseOrThrow(z.array(communeStatRow), rows, 'commune_stats').map(toCommuneStat);
   }, 'supabase');
 }
 
-export function fetchTransactions(signal?: AbortSignal): Promise<Result<readonly Transaction[]>> {
+/**
+ * Communes en plus forte hausse et en plus forte baisse, triées côté serveur.
+ *
+ * Charger les 40 000 lignes de `commune_stats` pour n'en afficher dix serait absurde :
+ * deux requêtes ordonnées suffisent, une par sens de variation. Le résultat est l'union
+ * des deux extrémités, que `topMovers` réordonne ensuite pour l'affichage.
+ */
+export function fetchTopMovers(
+  options: TopMoversOptions,
+  signal?: AbortSignal,
+): Promise<Result<readonly CommuneStat[]>> {
   return tryCatch(async () => {
     const supabase = getSupabase();
-    if (!supabase) return await fromMock(mockTransactions, signal);
+    const matches = (row: CommuneStat): boolean =>
+      row.transactions >= MIN_MOVER_TRANSACTIONS &&
+      (options.departmentCode === undefined || row.departmentCode === options.departmentCode) &&
+      (options.propertyType === undefined || row.propertyType === options.propertyType);
 
-    // PostgREST plafonne chaque réponse à 1 000 lignes (max-rows) : on pagine par tranches
-    // parallèles pour atteindre l'échantillon voulu sans dépendre de la configuration du projet.
-    const ranges: Array<readonly [number, number]> = [];
-    for (let from = 0; from < TRANSACTIONS_LIMIT; from += SUPABASE_PAGE_SIZE) {
-      ranges.push([from, Math.min(from + SUPABASE_PAGE_SIZE, TRANSACTIONS_LIMIT) - 1]);
+    if (!supabase) {
+      return await fromMock(() => {
+        const eligible = mockCommuneStats()
+          .filter(matches)
+          .toSorted((a, b) => b.yoyChange - a.yoyChange);
+        return [...eligible.slice(0, options.limit), ...eligible.slice(-options.limit)];
+      }, signal);
     }
-    const pages = await Promise.all(
-      ranges.map(async ([from, to]) => {
-        let query = supabase
-          .from('dvf_mutations_clean')
-          .select('*')
-          .order('date_mutation', { ascending: false })
-          .order('id', { ascending: true })
-          .range(from, to);
-        if (signal) query = query.abortSignal(signal);
-        const { data, error } = await query;
-        throwSupabase('dvf_mutations_clean', error);
-        return data ?? [];
-      }),
-    );
-    const rows: unknown[] = pages.flat();
+
+    const read = (ascending: boolean): PromiseLike<PageResponse> => {
+      let query = supabase
+        .from('commune_stats')
+        .select('*')
+        .gte('transactions', MIN_MOVER_TRANSACTIONS);
+      if (options.departmentCode !== undefined) {
+        query = query.eq('department_code', options.departmentCode);
+      }
+      if (options.propertyType !== undefined) {
+        query = query.eq('property_type', options.propertyType);
+      }
+      query = query.order('yoy_change', { ascending, nullsFirst: false }).limit(options.limit);
+      if (signal) query = query.abortSignal(signal);
+      return query;
+    };
+
+    const [risers, fallers] = await Promise.all([read(false), read(true)]);
+    throwSupabase('commune_stats', risers.error ?? fallers.error);
+
+    return parseOrThrow(
+      z.array(communeStatRow),
+      [...(risers.data ?? []), ...(fallers.data ?? [])],
+      'commune_stats',
+    ).map(toCommuneStat);
+  }, 'supabase');
+}
+
+/**
+ * Échantillon de mutations nettoyées. Le département est obligatoire : `dvf_mutations_clean`
+ * porte 2,3 millions de lignes et ne se lit jamais sans borne territoriale.
+ */
+export function fetchTransactions(
+  options: TransactionsOptions,
+  signal?: AbortSignal,
+): Promise<Result<readonly Transaction[]>> {
+  return tryCatch(async () => {
+    const limit = options.limit ?? TRANSACTIONS_LIMIT;
+    const supabase = getSupabase();
+    if (!supabase) {
+      return await fromMock(
+        () =>
+          mockTransactions()
+            .filter(
+              (row) =>
+                row.departmentCode === options.departmentCode &&
+                (options.inseeCode === undefined || row.inseeCode === options.inseeCode),
+            )
+            .slice(0, limit),
+        signal,
+      );
+    }
+
+    const rows = await fetchPagesInParallel('dvf_mutations_clean', limit, (from, to) => {
+      let query = supabase
+        .from('dvf_mutations_clean')
+        .select('*')
+        .eq('code_departement', options.departmentCode);
+      if (options.inseeCode !== undefined) query = query.eq('code_commune', options.inseeCode);
+      query = query
+        .order('date_mutation', { ascending: false })
+        .order('id', { ascending: true })
+        .range(from, to);
+      if (signal) query = query.abortSignal(signal);
+      return query;
+    });
 
     return parseOrThrow(z.array(transactionRow), rows, 'dvf_mutations_clean').map(
       (row): Transaction => ({

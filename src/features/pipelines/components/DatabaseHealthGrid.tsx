@@ -45,7 +45,6 @@ function Bar({ ratio, tone }: { readonly ratio: number; readonly tone: 'accent' 
 export function DatabaseHealthGrid({ health }: { readonly health: DatabaseHealth }) {
   const connectionRatio =
     health.maxConnections > 0 ? health.activeConnections / health.maxConnections : 0;
-  const keptRatio = health.rawRows > 0 ? health.cleanRows / health.rawRows : 0;
   const cacheHealthy = health.cacheHitRatio > HEALTHY_CACHE_HIT_RATIO;
   const refreshAgeMin = minutesSince(health.lastRefreshAt, health.checkedAt);
 
@@ -73,16 +72,14 @@ export function DatabaseHealthGrid({ health }: { readonly health: DatabaseHealth
       <Indicator
         label="Taille de la base"
         value={formatBytes(health.dbSizeBytes)}
-        detail="Tables brutes, tables nettoyées et index"
+        detail="Détail 12 mois, agrégats 36 mois et index"
       />
 
       <Indicator
-        label="Lignes brutes / nettoyées"
+        label="Brut (tampon) → Nettoyé (12 mois)"
         value={`${formatInt(health.rawRows)} → ${formatInt(health.cleanRows)}`}
-        detail={`${formatInt(keptRatio * 100)} % conservées après filtres qualité`}
-      >
-        <Bar ratio={keptRatio} tone="accent" />
-      </Indicator>
+        detail="Le brut est purgé dès qu'un département est agrégé ; le détail couvre 12 mois glissants"
+      />
 
       <Indicator
         label="Rafraîchissement des vues"

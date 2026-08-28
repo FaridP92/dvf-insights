@@ -7,9 +7,20 @@ export type PropertyType = 'appartement' | 'maison';
 export type Department = {
   readonly code: string;
   readonly name: string;
+  /** Région administrative, base de la comparaison territoriale à l'échelle nationale. */
+  readonly region: string;
 };
 
-/** Ligne de la vue matérialisée mv_monthly_stats. */
+/** Ligne du référentiel `communes` : une commune DVF et sa position. */
+export interface Commune {
+  readonly inseeCode: string;
+  readonly name: string;
+  readonly departmentCode: string;
+  readonly lat: number;
+  readonly lng: number;
+}
+
+/** Ligne de la table d'agrégats monthly_stats. */
 export interface MonthlyStat {
   readonly month: string; // ISO "YYYY-MM"
   readonly departmentCode: string;
@@ -22,7 +33,7 @@ export interface MonthlyStat {
   readonly totalValue: number;
 }
 
-/** Ligne de la vue matérialisée mv_commune_stats (année glissante). */
+/** Ligne de la table d'agrégats commune_stats (12 mois glissants). */
 export interface CommuneStat {
   readonly inseeCode: string;
   readonly communeName: string;

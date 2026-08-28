@@ -11,7 +11,7 @@ import {
   YAxis,
 } from 'recharts';
 import { formatCompact, formatEurPerSqm, formatMonth } from '@/lib/format';
-import { findDepartment } from '@/shared/mocks/departments';
+import type { DepartmentOption } from '@/shared/api/useDepartments';
 import type { MonthlyStat } from '@/shared/types/dvf';
 import {
   ChartTooltip,
@@ -21,7 +21,15 @@ import {
   gridProps,
   tooltipCursor,
 } from '@/shared/charts';
-import { Card, ChartSkeleton, EmptyState, ErrorState, Segmented, Select, Trend } from '@/shared/ui';
+import {
+  Card,
+  ChartSkeleton,
+  EmptyState,
+  ErrorState,
+  SearchableSelect,
+  Segmented,
+  Trend,
+} from '@/shared/ui';
 import { ALL, type ForecastSeriesPoint, type TypeFilter, buildForecast } from '../lib/predictionEngine';
 import { formatPlusMinus, formatTrendPerMonth } from '../lib/display';
 import type { Query } from './query';
@@ -120,9 +128,11 @@ function MiniKpi({
  */
 export function ForecastCard({
   monthly,
+  departmentOptions,
   className,
 }: {
   readonly monthly: Query<readonly MonthlyStat[]>;
+  readonly departmentOptions: readonly DepartmentOption[];
   readonly className?: string;
 }) {
   const [department, setDepartment] = useState('75');
@@ -130,16 +140,10 @@ export function ForecastCard({
 
   const monthlyStats = monthly.data;
 
-  const departmentOptions = useMemo(() => {
-    const codes = [...new Set((monthlyStats ?? []).map((row) => row.departmentCode))].toSorted();
-    return [
-      { value: ALL, label: 'Tous les départements' },
-      ...codes.map((code) => ({
-        value: code,
-        label: `${code} · ${findDepartment(code)?.name ?? 'Département'}`,
-      })),
-    ];
-  }, [monthlyStats]);
+  const options = useMemo(
+    () => [{ value: ALL, label: 'France entière' }, ...departmentOptions],
+    [departmentOptions],
+  );
 
   const { points, summary } = useMemo(
     () => buildForecast(monthlyStats ?? [], { department, propertyType }, HORIZON),
@@ -156,7 +160,7 @@ export function ForecastCard({
     [points],
   );
 
-  const activeDepartment = departmentOptions.some((option) => option.value === department)
+  const activeDepartment = options.some((option) => option.value === department)
     ? department
     : ALL;
 
@@ -167,10 +171,10 @@ export function ForecastCard({
       className={className ?? ''}
       action={
         <div className="flex flex-wrap items-center gap-2">
-          <Select
+          <SearchableSelect
             value={activeDepartment}
             onChange={setDepartment}
-            options={departmentOptions}
+            options={options}
             ariaLabel="Département de la prévision"
           />
           <Segmented

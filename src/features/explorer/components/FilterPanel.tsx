@@ -1,8 +1,7 @@
 import { type Dispatch } from 'react';
 import { RotateCcw } from 'lucide-react';
 import { formatInt } from '@/lib/format';
-import { Badge, Segmented, Select, cn } from '@/shared/ui';
-import { DEPARTMENTS } from '@/shared/mocks/departments';
+import { Badge, SearchableSelect, Segmented, Select } from '@/shared/ui';
 import {
   isPristine,
   type ExplorerFilters,
@@ -18,7 +17,8 @@ import {
  *
  * Elle reste purement contrôlée : aucun état local, tout passe par le reducer. C'est ce qui
  * permet de dériver la sélection différée pour les graphiques lourds sans désynchroniser
- * les contrôles de la donnée affichée.
+ * les contrôles de la donnée affichée. Le département fait exception : il ne filtre pas
+ * l'échantillon chargé, il le définit, et déclenche donc une nouvelle requête.
  */
 
 const PROPERTY_TYPE_OPTIONS: ReadonlyArray<{
@@ -89,11 +89,22 @@ function NumberInput({
 interface FilterPanelProps {
   readonly filters: ExplorerFilters;
   readonly dispatch: Dispatch<ExplorerFiltersAction>;
+  readonly department: string;
+  readonly onDepartmentChange: (code: string) => void;
+  readonly departmentOptions: ReadonlyArray<{ readonly value: string; readonly label: string }>;
   readonly matched: number;
   readonly total: number;
 }
 
-export function FilterPanel({ filters, dispatch, matched, total }: FilterPanelProps) {
+export function FilterPanel({
+  filters,
+  dispatch,
+  department,
+  onDepartmentChange,
+  departmentOptions,
+  matched,
+  total,
+}: FilterPanelProps) {
   const setRange = (field: RangeField) => (value: number | null) =>
     dispatch({ type: 'setRange', field, value });
   const pristine = isPristine(filters);
@@ -103,46 +114,18 @@ export function FilterPanel({ filters, dispatch, matched, total }: FilterPanelPr
       aria-label="Filtres de l'explorateur"
       className="card mb-6 flex flex-col gap-4 p-4 md:p-5"
     >
-      <div>
-        <div className="mb-1.5 flex items-center justify-between gap-3">
-          <span className="text-[11px] font-medium uppercase tracking-wide text-fg-subtle">
-            Départements
-          </span>
-          <span className="text-[11px] text-fg-subtle">
-            {filters.departments.length === 0
-              ? 'tous'
-              : `${formatInt(filters.departments.length)} sélectionné${filters.departments.length > 1 ? 's' : ''}`}
-          </span>
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-6">
+        <div>
+          <FieldLabel>Département</FieldLabel>
+          <SearchableSelect
+            value={department}
+            onChange={onDepartmentChange}
+            options={departmentOptions}
+            ariaLabel="Département analysé"
+            className="w-full"
+          />
         </div>
-        <div className="flex flex-wrap gap-1.5" role="group" aria-label="Départements">
-          {DEPARTMENTS.map((department) => {
-            const active = filters.departments.includes(department.code);
-            return (
-              <button
-                key={department.code}
-                type="button"
-                aria-pressed={active}
-                // Le nom est masqué sous le point de rupture `sm` : l'étiquette accessible
-                // ne doit pas se réduire au code du département.
-                aria-label={department.name}
-                title={department.name}
-                onClick={() => dispatch({ type: 'toggleDepartment', code: department.code })}
-                className={cn(
-                  'focus-ring rounded-full border px-2.5 py-1 text-xs font-medium transition-colors',
-                  active
-                    ? 'border-accent/40 bg-accent-soft text-accent'
-                    : 'border-border bg-surface text-fg-muted hover:border-border-strong hover:text-fg',
-                )}
-              >
-                <span className="tabular">{department.code}</span>
-                <span className="ml-1.5 hidden sm:inline">{department.name}</span>
-              </button>
-            );
-          })}
-        </div>
-      </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
         <div>
           <FieldLabel>Type de bien</FieldLabel>
           <Segmented

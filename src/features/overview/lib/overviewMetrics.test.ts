@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import type { CommuneStat, MonthlyStat, PropertyType } from '@/shared/types/dvf';
+import type { CommuneStat, Department, MonthlyStat, PropertyType } from '@/shared/types/dvf';
 import {
   ALL_FILTER,
   aggregateMonthly,
   computeHeadline,
   toBase100,
+  toRegionBase100,
   topMovers,
   type MonthlyPoint,
 } from './overviewMetrics';
@@ -180,6 +181,64 @@ describe('toBase100', () => {
 
   it('renvoie un tableau vide sans entrée', () => {
     expect(toBase100([])).toEqual([]);
+  });
+});
+
+describe('toRegionBase100', () => {
+  const departments: readonly Department[] = [
+    { code: '75', name: 'Paris', region: 'Île-de-France' },
+    { code: '92', name: 'Hauts-de-Seine', region: 'Île-de-France' },
+    { code: '59', name: 'Nord', region: 'Hauts-de-France' },
+  ];
+
+  const rows: readonly MonthlyStat[] = [
+    stat({ month: '2024-01', departmentCode: '75', transactions: 100, medianPricePerSqm: 10_000 }),
+    stat({ month: '2024-01', departmentCode: '92', transactions: 300, medianPricePerSqm: 6000 }),
+    stat({ month: '2024-01', departmentCode: '59', transactions: 200, medianPricePerSqm: 2000 }),
+    stat({ month: '2024-01', departmentCode: '01', transactions: 999, medianPricePerSqm: 1 }),
+  ];
+
+  it('agrège par région en pondérant par les transactions', () => {
+    const regions = toRegionBase100(rows, departments);
+    expect(regions.map((r) => r.name)).toEqual(['Hauts-de-France', 'Île-de-France']);
+
+    const idf = regions.find((r) => r.code === 'Île-de-France');
+    expect(idf?.points[0]?.transactions).toBe(400);
+    // (10000*100 + 6000*300) / 400
+    expect(idf?.points[0]?.medianPricePerSqm).toBeCloseTo(7000, 6);
+  });
+
+  it('ignore les départements absents du référentiel', () => {
+    const regions = toRegionBase100(rows, departments);
+    expect(regions).toHaveLength(2);
+    const total = regions.reduce((sum, r) => sum + (r.points[0]?.transactions ?? 0), 0);
+    expect(total).toBe(600);
+  });
+
+  it('applique le filtre de type de bien', () => {
+    const withHouses = [
+      ...rows,
+      stat({ month: '2024-01', departmentCode: '75', propertyType: 'maison', transactions: 50 }),
+    ];
+    const houses = toRegionBase100(withHouses, departments, 'maison');
+    expect(houses).toHaveLength(1);
+    expect(houses[0]?.points[0]?.transactions).toBe(50);
+  });
+
+  it('produit des séries directement indexables en base 100', () => {
+    const regions = toRegionBase100(
+      [
+        stat({ month: '2024-01', departmentCode: '75', medianPricePerSqm: 10_000 }),
+        stat({ month: '2024-02', departmentCode: '75', medianPricePerSqm: 11_000 }),
+      ],
+      departments,
+    );
+    expect(toBase100(regions)[1]).toMatchObject({ month: '2024-02', 'Île-de-France': 110 });
+  });
+
+  it('renvoie un tableau vide sans donnée', () => {
+    expect(toRegionBase100([], departments)).toEqual([]);
+    expect(toRegionBase100(rows, [])).toEqual([]);
   });
 });
 

@@ -10,8 +10,13 @@ import {
   quantile,
   relativeChange,
 } from '@/lib/stats';
-import { findDepartment } from '@/shared/mocks/departments';
-import type { CommuneStat, MonthlyStat, PropertyType, Transaction } from '@/shared/types/dvf';
+import type {
+  CommuneStat,
+  Department,
+  MonthlyStat,
+  PropertyType,
+  Transaction,
+} from '@/shared/types/dvf';
 
 /**
  * Moteur de prédiction de la page "Prédictions IA & Tendances".
@@ -372,6 +377,8 @@ export interface DepartmentMomentum {
   readonly priceChange: number;
   /** Variation du volume de transactions, même comparaison. */
   readonly volumeChange: number;
+  /** Volume des 12 derniers mois : sert à ne libeller que les départements les plus actifs. */
+  readonly transactions: number;
   readonly phase: MarketPhase;
 }
 
@@ -411,7 +418,9 @@ const totalVolume = (rows: readonly MonthPoint[]): number =>
 /** Momentum prix et volume par département, avec la phase de marché correspondante. */
 export function momentumByDepartment(
   monthlyStats: readonly MonthlyStat[],
+  departments: readonly Department[] = [],
 ): readonly DepartmentMomentum[] {
+  const names = new Map(departments.map((department) => [department.code, department.name]));
   const codes = [...new Set(monthlyStats.map((row) => row.departmentCode))].toSorted();
   const rows: DepartmentMomentum[] = [];
 
@@ -425,9 +434,10 @@ export function momentumByDepartment(
     if (!Number.isFinite(priceChange) || !Number.isFinite(volumeChange)) continue;
     rows.push({
       departmentCode: code,
-      departmentName: findDepartment(code)?.name ?? code,
+      departmentName: names.get(code) ?? code,
       priceChange,
       volumeChange,
+      transactions: totalVolume(recent),
       phase: marketPhase(priceChange, volumeChange),
     });
   }

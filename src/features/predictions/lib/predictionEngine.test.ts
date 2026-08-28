@@ -292,7 +292,7 @@ describe('marketPhase', () => {
 });
 
 describe('momentumByDepartment', () => {
-  const momentum = momentumByDepartment(monthlyStats);
+  const momentum = momentumByDepartment(monthlyStats, DEPARTMENTS);
 
   it('couvre chaque département du jeu', () => {
     expect(momentum).toHaveLength(DEPARTMENTS.length);
@@ -312,6 +312,18 @@ describe('momentumByDepartment', () => {
     const herault = momentum.find((row) => row.departmentCode === '34');
     expect(paris?.priceChange ?? 0).toBeLessThan(0);
     expect(herault?.priceChange ?? 0).toBeGreaterThan(0);
+  });
+
+  it('retombe sur le code quand le référentiel ne porte pas le département', () => {
+    const anonymous = momentumByDepartment(monthlyStats);
+    expect(anonymous[0]?.departmentName).toBe(anonymous[0]?.departmentCode);
+  });
+
+  it('classe les départements les plus actifs par volume récent', () => {
+    for (const row of momentum) expect(row.transactions).toBeGreaterThan(0);
+    const paris = momentum.find((row) => row.departmentCode === '75');
+    const isere = momentum.find((row) => row.departmentCode === '38');
+    expect(paris?.transactions ?? 0).toBeGreaterThan(isere?.transactions ?? 0);
   });
 
   it('ignore un historique trop court', () => {

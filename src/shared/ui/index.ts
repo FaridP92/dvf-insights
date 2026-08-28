@@ -6,5 +6,6 @@ export { Badge, type BadgeTone } from './Badge';
 export { PageHeader } from './PageHeader';
 export { Segmented } from './Segmented';
 export { Select } from './Select';
+export { SearchableSelect } from './SearchableSelect';
 export { Skeleton, ChartSkeleton, KpiSkeleton, ErrorState, EmptyState } from './States';
 export { ErrorBoundary } from './ErrorBoundary';

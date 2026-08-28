@@ -77,13 +77,8 @@ describe('applyFilters', () => {
     ]);
   });
 
-  it('traite une liste de départements vide comme "tous"', () => {
-    expect(applyFilters(sample, filters(), NOW)).toHaveLength(3);
-    expect(applyFilters(sample, filters({ departments: ['75'] }), NOW).map((t) => t.id)).toEqual([
-      'a',
-      'c',
-    ]);
-    expect(applyFilters(sample, filters({ departments: ['75', '69'] }), NOW)).toHaveLength(3);
+  it('ne restreint pas le territoire : le département est choisi à la requête', () => {
+    expect(applyFilters(sample, filters(), NOW).map((t) => t.id)).toEqual(['a', 'b', 'c']);
   });
 
   it('filtre par type de bien', () => {
@@ -267,8 +262,13 @@ describe('communeRanking', () => {
     ),
   ];
 
+  const DEPARTMENT_NAMES = new Map([
+    ['75', 'Paris'],
+    ['69', 'Rhône'],
+  ]);
+
   it('agrège par commune, trie par volume décroissant et nomme le département', () => {
-    const rows = communeRanking(sample);
+    const rows = communeRanking(sample, undefined, DEPARTMENT_NAMES);
     expect(rows.map((r) => r.inseeCode)).toEqual(['75111', '69383']);
     expect(rows[0]).toMatchObject({
       transactions: 5,
@@ -279,6 +279,10 @@ describe('communeRanking', () => {
       medianSurface: 60,
     });
     expect(rows[1]?.departmentName).toBe('Rhône');
+  });
+
+  it('retombe sur le code quand le nom du département est inconnu', () => {
+    expect(communeRanking(sample)[0]?.departmentName).toBe('75');
   });
 
   it('respecte la limite demandée', () => {

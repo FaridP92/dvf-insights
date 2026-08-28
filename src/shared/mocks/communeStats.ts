@@ -1,4 +1,4 @@
-import type { CommuneStat } from '@/shared/types/dvf';
+import type { Commune, CommuneStat } from '@/shared/types/dvf';
 import { tensionIndex } from '@/lib/stats/tension';
 import { DEPARTMENTS, PROPERTY_TYPES } from './departments';
 import { clamp, createRng, round } from './seed';
@@ -142,6 +142,25 @@ export const COMMUNES: Readonly<Record<string, readonly CommuneSeed[]>> = {
     { inseeCode: '34108', name: 'Frontignan', lat: 43.4478, lng: 3.7561 },
   ],
 };
+
+/**
+ * Référentiel communal du mode mock, image de la table `communes` : les communes de
+ * démonstration d'un département, triées par nom comme le fait la requête Supabase.
+ */
+export function generateCommunes(departmentCode: string): readonly Commune[] {
+  const seeds = COMMUNES[departmentCode] ?? [];
+  return seeds
+    .map(
+      (seed): Commune => ({
+        inseeCode: seed.inseeCode,
+        name: seed.name,
+        departmentCode,
+        lat: seed.lat,
+        lng: seed.lng,
+      }),
+    )
+    .toSorted((a, b) => a.name.localeCompare(b.name, 'fr'));
+}
 
 /**
  * Agrégats communaux sur les douze derniers mois.

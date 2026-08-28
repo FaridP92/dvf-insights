@@ -1,12 +1,25 @@
 import { useMemo, useState } from 'react';
 import { formatEur, formatEurPerSqm, formatInt } from '@/lib/format';
+import { fetchTransactions } from '@/shared/api/repository';
+import type { DepartmentOption } from '@/shared/api/useDepartments';
+import { useQuery } from '@/shared/api/useQuery';
 import type { Transaction } from '@/shared/types/dvf';
-import { Card, ChartSkeleton, EmptyState, ErrorState, Segmented, Trend } from '@/shared/ui';
+import {
+  Card,
+  ChartSkeleton,
+  EmptyState,
+  ErrorState,
+  SearchableSelect,
+  Segmented,
+  Trend,
+} from '@/shared/ui';
 import { type MarketAnomaly, marketAnomalies } from '../lib/predictionEngine';
 import { formatScore, formatShortDate } from '../lib/display';
-import type { Query } from './query';
 
 type AnomalyFilter = 'all' | 'under' | 'over';
+
+/** Département inspecté au premier chargement. */
+const DEFAULT_DEPARTMENT = '75';
 
 const FILTER_OPTIONS: ReadonlyArray<{ readonly value: AnomalyFilter; readonly label: string }> = [
   { value: 'all', label: 'Toutes' },
@@ -69,15 +82,23 @@ function AnomalyRow({ anomaly }: { readonly anomaly: MarketAnomaly }) {
  *
  * Le z-score est calculé au sein de chaque couple commune × type : sans ce groupage,
  * la liste ne contiendrait que des ventes parisiennes, chères sans être anormales.
+ * La détection porte sur le détail d'un seul département, jamais sur le national :
+ * une anomalie n'a de sens que rapportée à son marché local.
  */
 export function AnomaliesCard({
-  transactions,
+  departmentOptions,
   className,
 }: {
-  readonly transactions: Query<readonly Transaction[]>;
+  readonly departmentOptions: readonly DepartmentOption[];
   readonly className?: string;
 }) {
   const [filter, setFilter] = useState<AnomalyFilter>('all');
+  const [department, setDepartment] = useState(DEFAULT_DEPARTMENT);
+
+  const transactions = useQuery(
+    (signal) => fetchTransactions({ departmentCode: department }, signal),
+    [department],
+  );
 
   const anomalies = useMemo(() => marketAnomalies(transactions.data ?? []), [transactions.data]);
   const visible = useMemo(
@@ -92,12 +113,20 @@ export function AnomaliesCard({
       className={className ?? ''}
       padded={false}
       action={
-        <Segmented
-          value={filter}
-          onChange={setFilter}
-          options={FILTER_OPTIONS}
-          ariaLabel="Filtrer les anomalies"
-        />
+        <div className="flex flex-wrap items-center gap-2">
+          <SearchableSelect
+            value={department}
+            onChange={setDepartment}
+            options={departmentOptions}
+            ariaLabel="Département des anomalies"
+          />
+          <Segmented
+            value={filter}
+            onChange={setFilter}
+            options={FILTER_OPTIONS}
+            ariaLabel="Filtrer les anomalies"
+          />
+        </div>
       }
     >
       {transactions.status === 'error' ? (

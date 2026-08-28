@@ -13,7 +13,7 @@ import {
   ZAxis,
 } from 'recharts';
 import { formatPct } from '@/lib/format';
-import type { MonthlyStat } from '@/shared/types/dvf';
+import type { Department, MonthlyStat } from '@/shared/types/dvf';
 import {
   ChartTooltip,
   axisProps,
@@ -31,6 +31,9 @@ import {
 import type { Query } from './query';
 
 const CHART_HEIGHT = 320;
+
+/** Nombre de départements libellés sur le nuage : au-delà, les étiquettes se recouvrent. */
+const LABELLED_DEPARTMENTS = 12;
 
 const PHASE_COLOR: Readonly<Record<MarketPhase, string>> = {
   expansion: chartColors.accent,
@@ -82,25 +85,50 @@ function PhaseTooltip({
   );
 }
 
+/** Point du nuage : le libellé n'est renseigné que pour les départements les plus actifs. */
+type PhasePoint = DepartmentMomentum & { readonly label: string };
+
 /**
  * Quadrants prix × volume par département.
  *
  * Le volume décroche avant les prix : croiser les deux axes situe chaque marché dans
- * son cycle, là où une courbe de prix seule montrerait douze marchés identiques.
+ * son cycle, là où une courbe de prix seule montrerait des marchés identiques.
+ *
+ * À quatre-vingt-dix-sept points, écrire un code sur chacun rendrait le nuage illisible :
+ * seuls les douze départements les plus actifs sont libellés, l'infobulle nommant tous
+ * les autres au survol.
  */
 export function MarketPhasesCard({
   monthly,
+  departments,
   className,
 }: {
   readonly monthly: Query<readonly MonthlyStat[]>;
+  readonly departments: readonly Department[];
   readonly className?: string;
 }) {
-  const rows = useMemo(() => momentumByDepartment(monthly.data ?? []), [monthly.data]);
+  const rows = useMemo(
+    () => momentumByDepartment(monthly.data ?? [], departments),
+    [monthly.data, departments],
+  );
+
+  const points = useMemo((): readonly PhasePoint[] => {
+    const labelled = new Set(
+      rows
+        .toSorted((a, b) => b.transactions - a.transactions)
+        .slice(0, LABELLED_DEPARTMENTS)
+        .map((row) => row.departmentCode),
+    );
+    return rows.map((row) => ({
+      ...row,
+      label: labelled.has(row.departmentCode) ? row.departmentCode : '',
+    }));
+  }, [rows]);
 
   return (
     <Card
       title="Phases de marché par département"
-      subtitle="Variation du volume en abscisse, variation du prix en ordonnée, sur 12 mois glissants"
+      subtitle="Variation du volume en abscisse, variation du prix en ordonnée, sur 12 mois glissants. Les douze départements les plus actifs sont libellés ; l'infobulle nomme les autres."
       className={className ?? ''}
     >
       {monthly.status === 'error' ? (
@@ -135,16 +163,11 @@ export function MarketPhasesCard({
               <ReferenceLine x={0} stroke={chartColors.axis} strokeDasharray="4 4" />
               <ReferenceLine y={0} stroke={chartColors.axis} strokeDasharray="4 4" />
               <Tooltip cursor={tooltipCursor} content={<PhaseTooltip />} />
-              <Scatter data={[...rows]} isAnimationActive={false}>
-                {rows.map((row) => (
+              <Scatter data={[...points]} isAnimationActive={false}>
+                {points.map((row) => (
                   <Cell key={row.departmentCode} fill={PHASE_COLOR[row.phase]} />
                 ))}
-                <LabelList
-                  dataKey="departmentCode"
-                  position="top"
-                  fill={chartColors.text}
-                  fontSize={10}
-                />
+                <LabelList dataKey="label" position="top" fill={chartColors.text} fontSize={10} />
               </Scatter>
             </ScatterChart>
           </ResponsiveContainer>

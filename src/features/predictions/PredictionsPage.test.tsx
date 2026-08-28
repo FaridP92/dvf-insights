@@ -24,7 +24,11 @@ describe('PredictionsPage', () => {
     expect(screen.getByLabelText('Département de la prévision')).toBeInTheDocument();
     expect(screen.getByLabelText('Filtrer les anomalies')).toBeInTheDocument();
     expect(screen.getByText('Phases de marché par département')).toBeInTheDocument();
-    expect(screen.getByText(/Modèle hédonique/)).toBeInTheDocument();
+
+    // Les comparables arrivent après le référentiel : ils dépendent de la commune choisie.
+    expect(
+      await screen.findByText(/Modèle hédonique/, {}, { timeout: 5000 }),
+    ).toBeInTheDocument();
     expect(screen.getAllByRole('row').length).toBeGreaterThan(1);
   });
 });

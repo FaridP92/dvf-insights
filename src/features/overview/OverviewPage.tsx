@@ -1,8 +1,8 @@
 import { useMemo, useState } from 'react';
 import { formatInt } from '@/lib/format';
-import { fetchCommuneStats, fetchMonthlyStats } from '@/shared/api/repository';
+import { fetchMonthlyStats, fetchTopMovers } from '@/shared/api/repository';
+import { useDepartments } from '@/shared/api/useDepartments';
 import { useQuery } from '@/shared/api/useQuery';
-import { DEPARTMENTS } from '@/shared/mocks/departments';
 import type { CommuneStat, MonthlyStat } from '@/shared/types/dvf';
 import {
   Card,
@@ -11,19 +11,21 @@ import {
   ErrorState,
   KpiSkeleton,
   PageHeader,
+  SearchableSelect,
   Segmented,
-  Select,
 } from '@/shared/ui';
 import { CommuneMovers } from './components/CommuneMovers';
-import { DepartmentIndexChart, type DepartmentTrack } from './components/DepartmentIndexChart';
 import { HeadlineKpis } from './components/HeadlineKpis';
 import { MonthlyVolumeChart } from './components/MonthlyVolumeChart';
 import { PriceDispersionChart } from './components/PriceDispersionChart';
+import { RegionIndexChart } from './components/RegionIndexChart';
 import {
   ALL_FILTER,
   aggregateMonthly,
   computeHeadline,
+  toRegionBase100,
   topMovers,
+  type IndexSeries,
   type PropertyTypeFilter,
 } from './lib/overviewMetrics';
 
@@ -34,32 +36,40 @@ const NO_COMMUNES: readonly CommuneStat[] = [];
 /** Nombre de communes affichées de chaque côté du classement. */
 const MOVERS_PER_SIDE = 5;
 
-const DEPARTMENT_OPTIONS = [
-  { value: ALL_FILTER, label: 'Tous les départements' },
-  ...DEPARTMENTS.map((department) => ({
-    value: department.code,
-    label: `${department.code} · ${department.name}`,
-  })),
-];
-
 const PROPERTY_TYPE_OPTIONS: ReadonlyArray<{ value: PropertyTypeFilter; label: string }> = [
   { value: ALL_FILTER, label: 'Tous' },
   { value: 'appartement', label: 'Appartement' },
   { value: 'maison', label: 'Maison' },
 ];
 
-const DEPARTMENT_NAMES: ReadonlyMap<string, string> = new Map(
-  DEPARTMENTS.map((department) => [department.code, department.name]),
-);
-
 export default function OverviewPage() {
   const [department, setDepartment] = useState<string>(ALL_FILTER);
   const [propertyType, setPropertyType] = useState<PropertyTypeFilter>(ALL_FILTER);
+  const { departments, options, names } = useDepartments();
 
   const monthly = useQuery(fetchMonthlyStats, []);
-  const communes = useQuery(fetchCommuneStats, []);
+  // Les communes en mouvement sont triées côté serveur : charger les 40 000 lignes de
+  // commune_stats pour n'en afficher dix serait le seul appel réellement coûteux de la page.
+  const movers = useQuery(
+    (signal) =>
+      fetchTopMovers(
+        {
+          limit: MOVERS_PER_SIDE,
+          departmentCode: department === ALL_FILTER ? undefined : department,
+          propertyType: propertyType === ALL_FILTER ? undefined : propertyType,
+        },
+        signal,
+      ),
+    [department, propertyType],
+  );
+
   const monthlyRows = monthly.data ?? NO_MONTHLY;
-  const communeRows = communes.data ?? NO_COMMUNES;
+  const moverRows = movers.data ?? NO_COMMUNES;
+
+  const departmentOptions = useMemo(
+    () => [{ value: ALL_FILTER, label: 'France entière' }, ...options],
+    [options],
+  );
 
   const series = useMemo(
     () => aggregateMonthly(monthlyRows, { department, propertyType }),
@@ -67,33 +77,22 @@ export default function OverviewPage() {
   );
   const headline = useMemo(() => computeHeadline(series), [series]);
 
-  const tracks = useMemo(
-    (): readonly DepartmentTrack[] =>
-      DEPARTMENTS.map((profile) => ({
-        code: profile.code,
-        name: profile.name,
-        points: aggregateMonthly(monthlyRows, { department: profile.code, propertyType }),
-      })),
-    [monthlyRows, propertyType],
+  const regions = useMemo(
+    () => toRegionBase100(monthlyRows, departments, propertyType),
+    [monthlyRows, departments, propertyType],
+  );
+  const highlight = useMemo(
+    (): IndexSeries | null =>
+      department === ALL_FILTER
+        ? null
+        : { code: department, name: names.get(department) ?? department, points: series },
+    [department, names, series],
   );
 
-  const movers = useMemo(
-    () =>
-      topMovers(
-        communeRows.filter(
-          (commune) =>
-            (department === ALL_FILTER || commune.departmentCode === department) &&
-            (propertyType === ALL_FILTER || commune.propertyType === propertyType),
-        ),
-        MOVERS_PER_SIDE,
-      ),
-    [communeRows, department, propertyType],
-  );
+  const ranked = useMemo(() => topMovers(moverRows, MOVERS_PER_SIDE), [moverRows]);
 
   const scope =
-    department === ALL_FILTER
-      ? '12 départements de référence'
-      : (DEPARTMENT_NAMES.get(department) ?? department);
+    department === ALL_FILTER ? 'France entière' : (names.get(department) ?? department);
 
   return (
     <>
@@ -102,10 +101,10 @@ export default function OverviewPage() {
         description={`Marché immobilier ${scope} : niveau des prix, rythme des transactions et pression du marché sur 36 mois.`}
         actions={
           <>
-            <Select
+            <SearchableSelect
               value={department}
               onChange={setDepartment}
-              options={DEPARTMENT_OPTIONS}
+              options={departmentOptions}
               ariaLabel="Filtrer par département"
             />
             <Segmented
@@ -164,14 +163,14 @@ export default function OverviewPage() {
 
         <Card
           title="Évolution comparée (base 100)"
-          subtitle="Chaque département vaut 100 à son premier mois : on compare des trajectoires, pas des niveaux. Cliquez une légende pour l'isoler."
+          subtitle="Une courbe par région, chacune à 100 sur son premier mois : on compare des trajectoires, pas des niveaux. Le département sélectionné se superpose en accent."
         >
           {monthly.status === 'loading' && <ChartSkeleton height={300} />}
           {monthly.status === 'error' && (
             <ErrorState error={monthly.error} onRetry={monthly.refetch} />
           )}
           {monthly.status === 'success' && (
-            <DepartmentIndexChart tracks={tracks} selected={department} onSelect={setDepartment} />
+            <RegionIndexChart regions={regions} highlight={highlight} />
           )}
         </Card>
 
@@ -179,12 +178,10 @@ export default function OverviewPage() {
           title="Communes en mouvement"
           subtitle="Variation du prix médian sur un an, communes de 30 transactions et plus. Le badge donne la tension locale."
         >
-          {communes.status === 'loading' && <ChartSkeleton height={200} />}
-          {communes.status === 'error' && (
-            <ErrorState error={communes.error} onRetry={communes.refetch} />
-          )}
-          {communes.status === 'success' && (
-            <CommuneMovers movers={movers} departmentNames={DEPARTMENT_NAMES} />
+          {movers.status === 'loading' && <ChartSkeleton height={200} />}
+          {movers.status === 'error' && <ErrorState error={movers.error} onRetry={movers.refetch} />}
+          {movers.status === 'success' && (
+            <CommuneMovers movers={ranked} departmentNames={names} />
           )}
         </Card>
 

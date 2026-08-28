@@ -1,24 +1,28 @@
 import { useMemo, useState } from 'react';
 import { formatEur, formatEurPerSqm, formatInt } from '@/lib/format';
-import { findDepartment } from '@/shared/mocks/departments';
-import type { CommuneStat, PropertyType, Transaction } from '@/shared/types/dvf';
+import { fetchCommunes, fetchCommuneStats, fetchTransactions } from '@/shared/api/repository';
+import type { DepartmentOption } from '@/shared/api/useDepartments';
+import { useQuery } from '@/shared/api/useQuery';
+import type { PropertyType, Transaction } from '@/shared/types/dvf';
 import {
   Badge,
   Card,
   ChartSkeleton,
   EmptyState,
   ErrorState,
+  SearchableSelect,
   Segmented,
-  Select,
   type BadgeTone,
 } from '@/shared/ui';
 import { type Confidence, estimate } from '../lib/predictionEngine';
 import { formatElasticity, formatShortDate } from '../lib/display';
-import type { Query } from './query';
 
 const SURFACE_MIN = 15;
 const SURFACE_MAX = 250;
 const DEFAULT_SURFACE = 60;
+
+/** Département proposé au premier chargement. */
+const DEFAULT_DEPARTMENT = '75';
 
 const TYPE_OPTIONS: ReadonlyArray<{ readonly value: PropertyType; readonly label: string }> = [
   { value: 'appartement', label: 'Appartement' },
@@ -62,49 +66,45 @@ function ComparableRow({ row }: { readonly row: Transaction }) {
  * Simulateur d'estimation : le résultat se recalcule à chaque frappe, sans bouton.
  * Un formulaire qui attend une validation cache le lien entre l'entrée et le modèle ;
  * ici le prix bouge sous le curseur, ce qui rend l'élasticité de surface lisible.
+ *
+ * Le département choisit le référentiel communal et les agrégats ; la commune choisie
+ * détermine à elle seule les mutations chargées, soit quelques centaines de lignes au
+ * lieu des 2,3 millions du détail national.
  */
 export function EstimatorCard({
-  communes,
-  transactions,
+  departmentOptions,
   className,
 }: {
-  readonly communes: Query<readonly CommuneStat[]>;
-  readonly transactions: Query<readonly Transaction[]>;
+  readonly departmentOptions: readonly DepartmentOption[];
   readonly className?: string;
 }) {
-  const [department, setDepartment] = useState('75');
+  const [department, setDepartment] = useState(DEFAULT_DEPARTMENT);
   const [inseeCode, setInseeCode] = useState('');
   const [propertyType, setPropertyType] = useState<PropertyType>('appartement');
   const [surface, setSurface] = useState(DEFAULT_SURFACE);
   const [rooms, setRooms] = useState('3');
 
-  const communeStats = communes.data;
-  const sales = transactions.data;
+  const communes = useQuery((signal) => fetchCommunes(department, signal), [department]);
+  const communeStats = useQuery(
+    (signal) => fetchCommuneStats({ departmentCode: department }, signal),
+    [department],
+  );
 
-  const departmentOptions = useMemo(() => {
-    const codes = [...new Set((communeStats ?? []).map((row) => row.departmentCode))].toSorted();
-    return codes.map((code) => ({
-      value: code,
-      label: `${code} · ${findDepartment(code)?.name ?? 'Département'}`,
-    }));
-  }, [communeStats]);
+  const communeOptions = useMemo(
+    () => (communes.data ?? []).map((row) => ({ value: row.inseeCode, label: row.name })),
+    [communes.data],
+  );
 
-  const communeOptions = useMemo(() => {
-    const rows = (communeStats ?? []).filter(
-      (row) => row.departmentCode === department && row.propertyType === propertyType,
-    );
-    return rows
-      .map((row) => ({ value: row.inseeCode, label: row.communeName }))
-      .toSorted((a, b) => a.label.localeCompare(b.label, 'fr'));
-  }, [communeStats, department, propertyType]);
-
-  // Le département ou le type peuvent invalider la commune choisie : on retombe sur la première.
-  const activeDepartment = departmentOptions.some((option) => option.value === department)
-    ? department
-    : (departmentOptions[0]?.value ?? '');
+  // Le département peut invalider la commune choisie : on retombe sur la première.
   const activeCommune = communeOptions.some((option) => option.value === inseeCode)
     ? inseeCode
     : (communeOptions[0]?.value ?? '');
+
+  const sales = useQuery(
+    (signal) =>
+      fetchTransactions({ departmentCode: department, inseeCode: activeCommune }, signal),
+    [department, activeCommune],
+  );
 
   const result = useMemo(
     () =>
@@ -112,14 +112,16 @@ export function EstimatorCard({
         ? null
         : estimate(
             { inseeCode: activeCommune, propertyType, surface, rooms: Number(rooms) },
-            communeStats ?? [],
-            sales ?? [],
+            communeStats.data ?? [],
+            sales.data ?? [],
           ),
-    [activeCommune, propertyType, surface, rooms, communeStats, sales],
+    [activeCommune, propertyType, surface, rooms, communeStats.data, sales.data],
   );
 
-  const loading = communes.status === 'loading' || transactions.status === 'loading';
-  const failed = communes.status === 'error' ? communes : transactions.status === 'error' ? transactions : null;
+  // Le référentiel commande le formulaire ; les mutations ne commandent que le résultat.
+  // Sans cette séparation, changer de commune ferait clignoter les contrôles eux-mêmes.
+  const loading = communes.status === 'loading' || communeStats.status === 'loading';
+  const failed = [communes, communeStats].find((query) => query.status === 'error') ?? null;
 
   return (
     <Card
@@ -127,7 +129,7 @@ export function EstimatorCard({
       subtitle="Prix de marché estimé pour un bien, recalculé en direct"
       className={className ?? ''}
     >
-      {failed ? (
+      {failed !== null && failed.status === 'error' ? (
         <ErrorState error={failed.error} onRetry={failed.refetch} />
       ) : loading ? (
         <ChartSkeleton height={420} />
@@ -135,13 +137,13 @@ export function EstimatorCard({
         <div className="flex flex-col gap-5">
           <div className="flex flex-col gap-3">
             <div className="flex flex-wrap items-center gap-2">
-              <Select
-                value={activeDepartment}
+              <SearchableSelect
+                value={department}
                 onChange={setDepartment}
                 options={departmentOptions}
                 ariaLabel="Département du bien"
               />
-              <Select
+              <SearchableSelect
                 value={activeCommune}
                 onChange={setInseeCode}
                 options={communeOptions}
@@ -203,7 +205,11 @@ export function EstimatorCard({
             </div>
           </div>
 
-          {result === null ? (
+          {sales.status === 'error' ? (
+            <ErrorState error={sales.error} onRetry={sales.refetch} />
+          ) : sales.status === 'loading' ? (
+            <ChartSkeleton height={220} />
+          ) : result === null ? (
             <EmptyState message="Aucune référence locale pour ce couple commune et type de bien." />
           ) : (
             <div className="flex flex-col gap-4">

@@ -7,7 +7,7 @@
  * Paris et la médiane nationale serait un artefact.
  */
 import { relativeChange, tensionIndex, tensionLabel, type TensionLabel } from '@/lib/stats';
-import type { CommuneStat, MonthlyStat, PropertyType } from '@/shared/types/dvf';
+import type { CommuneStat, Department, MonthlyStat, PropertyType } from '@/shared/types/dvf';
 
 /** Valeur sentinelle des filtres : aucune restriction. */
 export const ALL_FILTER = 'all';
@@ -214,6 +214,48 @@ export function toBase100(statsByDepartment: readonly DepartmentSeries[]): reado
     }
     return row as Base100Row;
   });
+}
+
+/** Série indicée d'un territoire : une région, ou le département mis en avant. */
+export interface IndexSeries extends DepartmentSeries {
+  readonly name: string;
+}
+
+/**
+ * Trajectoires régionales en base 100.
+ *
+ * À douze départements, une courbe par département se lisait encore. À quatre-vingt-dix-sept,
+ * le graphique devient un plat de spaghettis : on agrège donc par région administrative,
+ * en pondérant les prix médians par le nombre de transactions, ce qui donne treize à dix-huit
+ * trajectoires comparables. Les départements absents du référentiel sont ignorés plutôt
+ * que regroupés dans une région fourre-tout.
+ */
+export function toRegionBase100(
+  stats: readonly MonthlyStat[],
+  departments: readonly Department[],
+  propertyType: PropertyTypeFilter = ALL_FILTER,
+): readonly IndexSeries[] {
+  const regionByCode = new Map(departments.map((d) => [d.code, d.region]));
+  const byRegion = new Map<string, MonthlyStat[]>();
+
+  for (const row of stats) {
+    const region = regionByCode.get(row.departmentCode);
+    if (region === undefined) continue;
+    const bucket = byRegion.get(region);
+    if (bucket) bucket.push(row);
+    else byRegion.set(region, [row]);
+  }
+
+  return [...byRegion.entries()]
+    .map(
+      ([region, rows]): IndexSeries => ({
+        code: region,
+        name: region,
+        points: aggregateMonthly(rows, { department: ALL_FILTER, propertyType }),
+      }),
+    )
+    .filter((series) => series.points.length > 0)
+    .toSorted((a, b) => a.name.localeCompare(b.name, 'fr'));
 }
 
 /** Communes qui montent et communes qui baissent, sur variation annuelle. */

@@ -14,8 +14,10 @@ describe('ExplorerPage', () => {
   it('affiche les KPI et le compteur une fois les mutations chargées', async () => {
     render(<ExplorerPage />);
 
-    expect(await screen.findByText(/transactions sur/i, {}, { timeout: 5000 })).toBeInTheDocument();
-    expect(kpiLabel('Transactions')).toBeInTheDocument();
+    expect(
+      await screen.findByText('Transactions', { selector: 'p' }, { timeout: 5000 }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/transactions sur/i)).toBeInTheDocument();
     expect(kpiLabel('Prix médian au m²')).toBeInTheDocument();
     expect(kpiLabel('Dispersion P10-P90')).toBeInTheDocument();
     expect(kpiLabel('Surface médiane')).toBeInTheDocument();
@@ -26,24 +28,22 @@ describe('ExplorerPage', () => {
     ).toBeInTheDocument();
   });
 
-  it('restreint la sélection quand un département est activé, puis la relâche', async () => {
+  it('recharge l échantillon quand le département change', async () => {
     render(<ExplorerPage />);
-    await screen.findByText(/transactions sur/i, {}, { timeout: 5000 });
+    await screen.findByText('Transactions', { selector: 'p' }, { timeout: 5000 });
+    await screen.findByText(/département Paris/, {}, { timeout: 5000 });
 
-    const paris = screen.getByRole('button', { name: 'Paris' });
-    expect(paris).toHaveAttribute('aria-pressed', 'false');
+    const select = screen.getByLabelText('Département analysé');
+    expect(select).toHaveValue('75');
 
-    fireEvent.click(paris);
-    await waitFor(() => expect(paris).toHaveAttribute('aria-pressed', 'true'));
-    expect(screen.getByText('1 sélectionné')).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole('button', { name: /Réinitialiser/i }));
-    await waitFor(() => expect(paris).toHaveAttribute('aria-pressed', 'false'));
+    fireEvent.change(select, { target: { value: '69' } });
+    await waitFor(() => expect(select).toHaveValue('69'));
+    expect(await screen.findByText(/département Rhône/, {}, { timeout: 5000 })).toBeInTheDocument();
   });
 
   it('trie le classement des communes au clic sur un en-tête', async () => {
     render(<ExplorerPage />);
-    await screen.findByText(/transactions sur/i, {}, { timeout: 5000 });
+    await screen.findByText('Transactions', { selector: 'p' }, { timeout: 5000 });
 
     const header = screen.getByRole('columnheader', { name: /^Commune$/ });
     expect(header).toHaveAttribute('aria-sort', 'none');

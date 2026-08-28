@@ -12,23 +12,44 @@ Trois pièges structurent tout le pipeline :
 |---|---|---|
 | Une mutation = plusieurs lignes (lots, dispositions) | Prix compté N fois, surfaces additionnées à tort | Ne conserver que les `id_mutation` à ligne unique |
 | Ventes en bloc, VEFA, cessions non marchandes | Prix/m² absurdes (5 €/m² ou 200 000 €/m²) | Filtre `nature_mutation = 'Vente'` + fenêtre [200, 30 000] €/m² |
-| Pas de prix/m² ni d'agrégat fourni | Tout calcul côté client est lent et faux | Colonne générée `price_per_sqm`, vues matérialisées |
+| Pas de prix/m² ni d'agrégat fourni | Tout calcul côté client est lent et faux | Colonne générée `price_per_sqm`, tables d'agrégats |
 
 ## 2. Modèle en trois couches
 
+Le périmètre est national et l'hébergement tient dans 500 Mo : garder trois ans de mutations
+pour la France entière au grain du bien est hors de portée. Chaque couche a donc sa rétention,
+et c'est ce compromis qui définit le modèle.
+
 ```
 dvf_mutations (brut, partitionné par année)        <- n8n : téléchargement + insertion
-   |  refresh_clean_mutations(from, to)
-dvf_mutations_clean (1 ligne = 1 bien, prix/m²)    <- filtres qualité, RLS lecture
-   |  refresh materialized view
-mv_monthly_stats / mv_commune_stats                 <- consommées par le front
+   |  process_department(from, to, département) : nettoyage, agrégation, puis purge du brut
+dvf_mutations_clean (1 ligne = 1 bien, prix/m²)    <- 12 mois glissants, RLS lecture
+   |  finalize_run() : rétention et reconstruction des agrégats
+communes                                            <- référentiel, ~35 000 lignes
+monthly_stats                                       <- 36 mois × département × type
+commune_stats / commune_yearly_stats                <- 12 mois glissants par commune × type
 pipeline_runs / webhook_events                      <- monitoring, écrit par n8n
 ```
 
-Pourquoi des vues matérialisées et non des requêtes à la volée : un `percentile_cont`
-sur 3 millions de lignes prend plusieurs secondes ; pré-agrégé par mois × département × type,
-la table fait quelques milliers de lignes et répond en millisecondes. Le rafraîchissement
-est déclenché par n8n en fin d'ingestion, donc la fraîcheur est celle du pipeline.
+| Couche | Grain | Rétention | Ordre de grandeur |
+|---|---|---|---|
+| `dvf_mutations` | ligne DVF brute | tampon, purgé dès le département agrégé | proche de zéro au repos |
+| `dvf_mutations_clean` | un bien vendu | 12 mois glissants | ~2,3 M lignes |
+| `monthly_stats` | mois × département × type | 36 mois | ~7 000 lignes |
+| `commune_stats` | commune × type | 12 mois glissants | ~40 000 lignes |
+
+Trois conséquences pour le front, toutes portées par `shared/api/repository.ts` :
+
+1. **Le détail ne se lit jamais sans borne territoriale.** `fetchTransactions` exige un code de
+   département ; la commune est un filtre supplémentaire. Une requête nationale sur
+   `dvf_mutations_clean` serait un incident, pas une lenteur.
+2. **Les agrégats persistants ont remplacé les vues matérialisées.** Un `percentile_cont` sur des
+   millions de lignes prend plusieurs secondes ; pré-agrégé, il répond en millisecondes. Les
+   tables sont écrites par le pipeline, donc la fraîcheur est celle de l'ingestion, et rien
+   n'oblige à conserver le détail qui les a produites.
+3. **Tout ce qui dépasse mille lignes est paginé**, PostgREST plafonnant chaque réponse. Quand le
+   besoin se réduit à quelques lignes extrêmes, le tri part au serveur plutôt que la table au
+   client : `fetchTopMovers` remonte dix communes au lieu de quarante mille.
 
 ## 3. KPIs retenus et justification
 
@@ -39,7 +60,7 @@ est déclenché par n8n en fin d'ingestion, donc la fraîcheur est celle du pipe
 | Indice de tension (0-10) | sigmoïdes pondérées de Δvolume, Δprix, rotation | Un seul chiffre pour "où ça chauffe" | Jauge radiale |
 | Élasticité prix/surface | pente de log(prix) ~ log(surface) | < 1 : décote des grandes surfaces, signal de marché locatif tendu | Scatter + droite |
 | Dispersion P10 / P50 / P90 | quantiles mensuels | L'hétérogénéité d'un territoire, invisible dans une moyenne | Bande d'aire |
-| Base 100 par département | médiane / médiane du mois de référence | Comparer des marchés de niveaux différents | LineChart multi-séries |
+| Base 100 par région | médiane régionale pondérée / médiane du mois de référence | Comparer des trajectoires à l'échelle nationale sans 97 courbes | LineChart multi-séries |
 | Structure du marché | répartition type × tranche de surface | Lire la composition avant les prix | Barres empilées |
 | Corrélations | Pearson sur prix, surface, pièces, terrain, année | Vitrine data science, lecture immédiate | Heatmap |
 | Estimation | hédonique simplifiée : médiane locale × ajustement surface × prime pièces | Explicable en une phrase, bande de confiance honnête | KPI + intervalle |
@@ -59,14 +80,29 @@ est déclenché par n8n en fin d'ingestion, donc la fraîcheur est celle du pipe
 
 ## 5. Périmètre géographique
 
-Douze départements de référence : 75, 92, 69, 33, 13, 31, 44, 59, 06, 35, 38, 34.
-L'Alsace-Moselle (57, 67, 68) est exclue par construction : ces départements relèvent du
+**France entière : les 97 départements publiés dans DVF.** Le référentiel vit dans la table
+`departments` (code, nom, région, parc de logements) et non dans le code du front : ajouter un
+territoire ne demande aucun déploiement.
+
+L'**Alsace-Moselle (57, 67, 68) est exclue par construction** : ces départements relèvent du
 Livre foncier et ne sont pas publiés dans DVF (un premier choix incluant le 67 a échoué en
-ingestion, fichier inexistant).
+ingestion, fichier inexistant). Mayotte (976), également absente de DVF, ne l'est pas davantage.
+D'où 97 départements et non 101.
+
+Le passage de douze départements de référence à la France entière change surtout la lecture :
+
+- Une courbe par département devient illisible au-delà de la vingtaine. La comparaison en base
+  100 s'agrège donc **par région** (pondérée par les transactions), le département sélectionné
+  restant superposé en accent.
+- Un nuage de 97 points ne peut pas porter 97 étiquettes : les phases de marché ne libellent que
+  les douze départements les plus actifs, l'infobulle nommant tous les autres.
+- Les listes déroulantes de département et de commune basculent en champ de recherche au-delà de
+  vingt entrées (`SearchableSelect`).
 
 ## 6. Mocks
 
 Les jeux mock sont générés de façon déterministe (générateur pseudo-aléatoire à graine) à
 partir de niveaux de prix réalistes par département, avec saisonnalité et tendance. Ils
-partagent les types des vues Supabase : le jour où `VITE_SUPABASE_URL` est renseigné,
-les composants ne changent pas.
+partagent les types des tables Supabase : le jour où `VITE_SUPABASE_URL` est renseigné,
+les composants ne changent pas. Ils restent volontairement bornés à douze départements, ce qui
+suffit à exercer toutes les vues et garde les tests rapides et déterministes.

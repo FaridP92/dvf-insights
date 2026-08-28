@@ -8,7 +8,6 @@ import {
   type Distribution,
   type LinearFit,
 } from '@/lib/stats';
-import { findDepartment } from '@/shared/mocks/departments';
 import type { PropertyType, Transaction } from '@/shared/types/dvf';
 import type { ExplorerFilters } from '../hooks/useExplorerFilters';
 
@@ -42,11 +41,9 @@ export function applyFilters(
   const floor = new Date(now.getTime() - months * AVERAGE_DAYS_PER_MONTH * DAY_MS)
     .toISOString()
     .slice(0, 10);
-  const departments = new Set(filters.departments);
 
   return transactions.filter((t) => {
     if (t.date < floor) return false;
-    if (departments.size > 0 && !departments.has(t.departmentCode)) return false;
     if (filters.propertyType !== 'tous' && t.propertyType !== filters.propertyType) return false;
     if (filters.surfaceMin !== null && t.surface < filters.surfaceMin) return false;
     if (filters.surfaceMax !== null && t.surface > filters.surfaceMax) return false;
@@ -272,6 +269,7 @@ export const COMMUNE_RANKING_LIMIT = 15;
 export function communeRanking(
   transactions: readonly Transaction[],
   limit = COMMUNE_RANKING_LIMIT,
+  departmentNames?: ReadonlyMap<string, string>,
 ): readonly CommuneRankingRow[] {
   const groups = new Map<string, Transaction[]>();
   for (const t of transactions) {
@@ -290,7 +288,7 @@ export function communeRanking(
       inseeCode: first.inseeCode,
       communeName: first.communeName,
       departmentCode: first.departmentCode,
-      departmentName: findDepartment(first.departmentCode)?.name ?? first.departmentCode,
+      departmentName: departmentNames?.get(first.departmentCode) ?? first.departmentCode,
       transactions: group.length,
       medianPricePerSqm: quantile(prices, 0.5),
       p25PricePerSqm: quantile(prices, 0.25),

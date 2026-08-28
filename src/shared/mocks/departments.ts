@@ -9,7 +9,6 @@ import type { Department, PropertyType } from '@/shared/types/dvf';
  * se négocient sous les appartements partout sauf à Paris, comme dans la réalité.
  */
 export interface DepartmentProfile extends Department {
-  readonly region: string;
   /** Parc de logements (INSEE, ordre de grandeur). Sert à dimensionner les volumes. */
   readonly housingStock: number;
   /** Prix médian de référence en euros par m², par type de bien. */
@@ -140,7 +139,3 @@ export const REFERENCE_SURFACE: Readonly<Record<PropertyType, number>> = {
   appartement: 55,
   maison: 105,
 };
-
-export function findDepartment(code: string): DepartmentProfile | undefined {
-  return DEPARTMENTS.find((d) => d.code === code);
-}

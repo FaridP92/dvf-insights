@@ -2,19 +2,13 @@ import { describe, expect, it } from 'vitest';
 import { explorerFiltersReducer, INITIAL_EXPLORER_FILTERS, isPristine } from './useExplorerFilters';
 
 describe('explorerFiltersReducer', () => {
-  it('ajoute puis retire un département sans muter l état précédent', () => {
-    const added = explorerFiltersReducer(INITIAL_EXPLORER_FILTERS, {
-      type: 'toggleDepartment',
-      code: '75',
+  it('ne mute pas l état précédent en changeant un champ', () => {
+    const next = explorerFiltersReducer(INITIAL_EXPLORER_FILTERS, {
+      type: 'setPropertyType',
+      value: 'maison',
     });
-    expect(added.departments).toEqual(['75']);
-    expect(INITIAL_EXPLORER_FILTERS.departments).toEqual([]);
-
-    const both = explorerFiltersReducer(added, { type: 'toggleDepartment', code: '69' });
-    expect(both.departments).toEqual(['75', '69']);
-
-    const removed = explorerFiltersReducer(both, { type: 'toggleDepartment', code: '75' });
-    expect(removed.departments).toEqual(['69']);
+    expect(next.propertyType).toBe('maison');
+    expect(INITIAL_EXPLORER_FILTERS.propertyType).toBe('tous');
   });
 
   it('met à jour une borne numérique et accepte null pour la relâcher', () => {

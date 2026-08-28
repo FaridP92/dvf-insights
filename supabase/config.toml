@@ -1,0 +1,7 @@
+project_id = "dvf-insights"
+
+[functions.ingest-dvf]
+verify_jwt = false   # authentification par signature HMAC (N8N_WEBHOOK_SECRET)
+
+[functions.pipeline-status]
+verify_jwt = false

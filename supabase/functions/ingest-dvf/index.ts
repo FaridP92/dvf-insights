@@ -122,19 +122,29 @@ Deno.serve(async (req) => {
     p_rejected: rejected,
   });
 
-  let cleaned: number | null = null;
+  // Dernier lot : le nettoyage et le rafraîchissement des vues sont asynchrones (pg_cron),
+  // le run reste "running" avec stage = refresh jusqu'à ce que le job le clôture.
+  let jobId: string | null = null;
   if (final) {
     if (period) {
-      const { data } = await supabase.rpc('refresh_clean_mutations', { p_from: period.from, p_to: period.to });
-      cleaned = typeof data === 'number' ? data : null;
+      const { data } = await supabase.rpc('enqueue_maintenance', {
+        p_run_id: runId,
+        p_from: period.from,
+        p_to: period.to,
+      });
+      jobId = typeof data === 'string' ? data : null;
+      await supabase
+        .from('pipeline_runs')
+        .update({ metadata: { stage: 'refresh', maintenance_job: jobId } })
+        .eq('id', runId);
+    } else {
+      await supabase
+        .from('pipeline_runs')
+        .update({ status: 'success', finished_at: new Date().toISOString() })
+        .eq('id', runId);
     }
-    await supabase.rpc('refresh_materialized_views');
-    await supabase
-      .from('pipeline_runs')
-      .update({ status: 'success', finished_at: new Date().toISOString(), metadata: { cleaned } })
-      .eq('id', runId);
   }
 
   await logEvent(200, runId);
-  return json(200, { runId, ingested: valid.length, rejected, cleaned, final: final ?? false });
+  return json(200, { runId, ingested: valid.length, rejected, maintenanceJob: jobId, final: final ?? false });
 });

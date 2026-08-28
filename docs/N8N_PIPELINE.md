@@ -25,7 +25,9 @@ Schedule (le 5 de chaque mois, 03:00)
             -> POST ingest-dvf { runId, rows, reset?, final: false }  (1 requête par lot)
        -> retour boucle
      done -> POST ingest-dvf { runId, rows: [], final: true, period }
-             = refresh_clean_mutations(period) + refresh_materialized_views() + clôture du run
+             = enqueue_maintenance(run, period) : le run passe en stage "refresh"
+                pg_cron (chaque minute) -> process_maintenance_jobs()
+                  = refresh_clean_mutations(period) + refresh des vues + clôture du run (success / failed)
 ```
 
 ## Millésime
@@ -41,6 +43,20 @@ intégralement ce millésime à chaque run : les runs sont idempotents, départe
    nom d'en-tête `x-webhook-secret`, valeur = le secret `N8N_WEBHOOK_SECRET` des Edge Functions.
    L'assigner aux 3 nœuds HTTP qui appellent Supabase (pas au téléchargement data.gouv).
 3. Activer le workflow.
+
+## Pourquoi le nettoyage est asynchrone
+
+Un appel RPC via PostgREST est soumis au `statement_timeout` du rôle ; nettoyer 345 000 lignes
+le dépasse. L'Edge Function ne fait donc qu'enfiler un job dans `maintenance_jobs`, et un job
+`pg_cron` l'exécute sans limite de durée. La page Data Pipelines montre le run en "running"
+pendant cette phase, puis "success" avec le nombre de lignes nettoyées dans `metadata`.
+
+## Chargement de l'historique
+
+Le run mensuel ne remplace que le millésime courant. Pour charger un millésime antérieur,
+figer `year`, `periodFrom` et `periodTo` dans "Parametres du run" (ex. 2024 / 2024-01-01 /
+2025-01-01), exécuter, puis remettre les expressions automatiques. Chaque (millésime,
+département) est remplacé atomiquement, on peut donc relancer sans doublon.
 
 ## Observabilité
 

@@ -1,16 +1,15 @@
 import { useMemo } from 'react';
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { formatEurPerSqm, formatMonth } from '@/lib/format';
-import { ChartTooltip, axisProps, chartColors, gridProps, tooltipCursor } from '@/shared/charts';
+import { ChartTooltip, axisProps, chartColors, gridProps, seriesColor, tooltipCursor } from '@/shared/charts';
 import type { TooltipRow } from '@/shared/charts';
 import { EmptyState } from '@/shared/ui';
-import { toBase100, type IndexSeries } from '../lib/overviewMetrics';
+import { pickRegionHighlights, smoothBase100, toBase100, type IndexSeries } from '../lib/overviewMetrics';
 import { seriesEntries, type TooltipRenderProps } from './tooltipProps';
 
-/** Au delà, l'infobulle devient un tableau : on ne garde que le haut du classement. */
-const MAX_TOOLTIP_ROWS = 6;
+/** Fenêtre de lissage : trois mois effacent la saisonnalité sans masquer les retournements. */
+const SMOOTHING_WINDOW = 3;
 
-/** Clé de recherche du prix médian derrière un point d'indice. */
 const priceKey = (month: string, code: string): string => `${month}|${code}`;
 
 function IndexTooltip({
@@ -19,29 +18,25 @@ function IndexTooltip({
   label,
   names,
   prices,
-  highlighted,
+  colors,
 }: TooltipRenderProps & {
   readonly names: ReadonlyMap<string, string>;
   readonly prices: ReadonlyMap<string, number>;
-  readonly highlighted: string | null;
+  readonly colors: ReadonlyMap<string, string>;
 }) {
   if (active !== true) return null;
   const month = typeof label === 'string' ? label : '';
   const entries = seriesEntries(payload).toSorted((a, b) => b.value - a.value);
   if (entries.length === 0) return null;
 
-  // Le département mis en avant reste visible même s'il n'est pas dans le haut du classement.
-  const top = entries.filter((entry) => entry.dataKey !== highlighted).slice(0, MAX_TOOLTIP_ROWS);
-  const pinned = entries.filter((entry) => entry.dataKey === highlighted);
-  const kept = [...pinned, ...top];
-
+  // Seules les séries colorées sont détaillées : la trame grise n'est là que pour le contexte.
+  const kept = entries.filter((entry) => colors.has(entry.dataKey));
   const rows: readonly TooltipRow[] = kept.map((entry) => {
     const price = prices.get(priceKey(month, entry.dataKey));
     return {
       label: names.get(entry.dataKey) ?? entry.dataKey,
       value: `${entry.value.toFixed(1)}${price === undefined ? '' : ` · ${formatEurPerSqm(price)}`}`,
-      color: entry.color,
-      muted: entry.dataKey !== highlighted && highlighted !== null,
+      color: colors.get(entry.dataKey) ?? chartColors.muted,
     };
   });
 
@@ -49,22 +44,16 @@ function IndexTooltip({
     <ChartTooltip
       title={formatMonth(month)}
       rows={rows}
-      note={
-        entries.length > kept.length
-          ? `${kept.length} lignes sur ${entries.length} territoires`
-          : 'Indice base 100 au premier mois'
-      }
+      note={`Indice base 100, lissé sur ${SMOOTHING_WINDOW} mois · ${entries.length} régions`}
     />
   );
 }
 
 /**
- * Trajectoires comparées en base 100, une courbe par région.
- *
- * À l'échelle nationale, comparer quatre-vingt-dix-sept départements sur un même axe ne
- * produit qu'un enchevêtrement. Les régions donnent la trame du territoire en une quinzaine
- * de courbes grises ; le département sélectionné s'y superpose en accent, ce qui répond à
- * la seule question utile : mon territoire suit-il sa région ou s'en écarte-t-il ?
+ * Trajectoires comparées en base 100, une courbe par région métropolitaine, lissées sur
+ * trois mois. Seules les deux régions les plus dynamiques et les deux plus faibles sont en
+ * couleur ; les autres forment une trame grise. Le département sélectionné se superpose en
+ * accent : la question utile est de savoir s'il suit sa région ou s'en écarte.
  */
 export function RegionIndexChart({
   regions,
@@ -77,24 +66,41 @@ export function RegionIndexChart({
     () => (highlight === null ? regions : [...regions, highlight]),
     [regions, highlight],
   );
-  const rows = useMemo(() => toBase100(tracks), [tracks]);
-  const names = useMemo(
-    () => new Map(tracks.map((track) => [track.code, track.name])),
-    [tracks],
-  );
+  const rows = useMemo(() => smoothBase100(toBase100(tracks), SMOOTHING_WINDOW), [tracks]);
+  const highlightedCode = highlight?.code ?? null;
+
+  const colors = useMemo(() => {
+    const map = new Map<string, string>();
+    const picked = pickRegionHighlights(
+      rows,
+      regions.map((region) => region.code),
+    );
+    picked.forEach((code, index) => map.set(code, seriesColor(index + 1)));
+    if (highlightedCode !== null) map.set(highlightedCode, chartColors.accent);
+    return map;
+  }, [rows, regions, highlightedCode]);
+
+  const names = useMemo(() => new Map(tracks.map((track) => [track.code, track.name])), [tracks]);
   const prices = useMemo(() => {
     const map = new Map<string, number>();
     for (const track of tracks) {
-      for (const point of track.points) {
-        map.set(priceKey(point.month, track.code), point.medianPricePerSqm);
-      }
+      for (const point of track.points) map.set(priceKey(point.month, track.code), point.medianPricePerSqm);
     }
     return map;
   }, [tracks]);
 
   if (rows.length === 0) return <EmptyState message="Aucune donnée pour ce filtre." />;
 
-  const highlightedCode = highlight?.code ?? null;
+  const last = rows.at(-1);
+  const legend = tracks
+    .filter((track) => colors.has(track.code))
+    .map((track) => ({
+      code: track.code,
+      name: track.name,
+      color: colors.get(track.code) ?? chartColors.muted,
+      value: typeof last?.[track.code] === 'number' ? (last[track.code] as number) : undefined,
+    }))
+    .toSorted((a, b) => (b.value ?? 0) - (a.value ?? 0));
 
   return (
     <div className="flex flex-col gap-3">
@@ -108,22 +114,20 @@ export function RegionIndexChart({
             minTickGap={28}
           />
           <YAxis {...axisProps} width={44} domain={['auto', 'auto']} />
-          <Tooltip
-            cursor={tooltipCursor}
-            content={<IndexTooltip names={names} prices={prices} highlighted={highlightedCode} />}
-          />
+          <Tooltip cursor={tooltipCursor} content={<IndexTooltip names={names} prices={prices} colors={colors} />} />
           {tracks.map((track) => {
+            const color = colors.get(track.code);
             const accented = track.code === highlightedCode;
             return (
               <Line
                 key={track.code}
                 dataKey={track.code}
                 type="monotone"
-                stroke={accented ? chartColors.accent : chartColors.muted}
-                strokeWidth={accented ? 2.4 : 1}
-                strokeOpacity={accented ? 1 : 0.55}
+                stroke={color ?? chartColors.muted}
+                strokeWidth={accented ? 2.6 : color === undefined ? 1 : 1.8}
+                strokeOpacity={color === undefined ? 0.35 : 1}
                 dot={false}
-                activeDot={accented ? { r: 3, strokeWidth: 0 } : false}
+                activeDot={color === undefined ? false : { r: 3, strokeWidth: 0 }}
                 isAnimationActive={false}
               />
             );
@@ -131,23 +135,21 @@ export function RegionIndexChart({
         </LineChart>
       </ResponsiveContainer>
 
-      <ul className="flex flex-wrap gap-x-3 gap-y-1.5 text-[11px]">
-        {tracks.map((track) => {
-          const accented = track.code === highlightedCode;
-          return (
-            <li
-              key={track.code}
-              className={`inline-flex items-center gap-1.5 ${accented ? 'font-medium text-fg' : 'text-fg-subtle'}`}
-            >
-              <span
-                className="size-2 rounded-sm"
-                style={{ background: accented ? chartColors.accent : chartColors.muted }}
-                aria-hidden
-              />
-              {track.name}
-            </li>
-          );
-        })}
+      <ul className="flex flex-wrap gap-x-4 gap-y-1.5 text-[11px]">
+        {legend.map((item) => (
+          <li
+            key={item.code}
+            className={`inline-flex items-center gap-1.5 ${item.code === highlightedCode ? 'font-medium text-fg' : 'text-fg-muted'}`}
+          >
+            <span className="size-2 rounded-sm" style={{ background: item.color }} aria-hidden />
+            {item.name}
+            {item.value !== undefined && <span className="tabular text-fg-subtle">{item.value.toFixed(1)}</span>}
+          </li>
+        ))}
+        <li className="inline-flex items-center gap-1.5 text-fg-subtle">
+          <span className="size-2 rounded-sm" style={{ background: chartColors.muted, opacity: 0.5 }} aria-hidden />
+          Autres régions métropolitaines
+        </li>
       </ul>
     </div>
   );

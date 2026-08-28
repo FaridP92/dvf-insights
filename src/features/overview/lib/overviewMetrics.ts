@@ -6,6 +6,7 @@
  * nombre de transactions, sans quoi un département de 200 ventes pèserait autant que
  * Paris et la médiane nationale serait un artefact.
  */
+import { movingAverage } from '@/lib/stats';
 import { relativeChange, tensionIndex, tensionLabel, type TensionLabel } from '@/lib/stats';
 import type { CommuneStat, Department, MonthlyStat, PropertyType } from '@/shared/types/dvf';
 
@@ -230,12 +231,27 @@ export interface IndexSeries extends DepartmentSeries {
  * trajectoires comparables. Les départements absents du référentiel sont ignorés plutôt
  * que regroupés dans une région fourre-tout.
  */
+/** Régions d'outre-mer : trop peu de ventes pour une trajectoire lisible, exclues de la comparaison. */
+export const OVERSEAS_REGIONS: ReadonlySet<string> = new Set([
+  'Guadeloupe',
+  'Martinique',
+  'Guyane',
+  'La Réunion',
+  'Mayotte',
+]);
+
 export function toRegionBase100(
   stats: readonly MonthlyStat[],
   departments: readonly Department[],
   propertyType: PropertyTypeFilter = ALL_FILTER,
+  options: { readonly metropolitanOnly?: boolean } = {},
 ): readonly IndexSeries[] {
-  const regionByCode = new Map(departments.map((d) => [d.code, d.region]));
+  const metropolitanOnly = options.metropolitanOnly ?? true;
+  const regionByCode = new Map(
+    departments
+      .filter((d) => !metropolitanOnly || !OVERSEAS_REGIONS.has(d.region))
+      .map((d) => [d.code, d.region]),
+  );
   const byRegion = new Map<string, MonthlyStat[]>();
 
   for (const row of stats) {
@@ -256,6 +272,50 @@ export function toRegionBase100(
     )
     .filter((series) => series.points.length > 0)
     .toSorted((a, b) => a.name.localeCompare(b.name, 'fr'));
+}
+
+/**
+ * Lisse chaque indice par moyenne mobile centrée : la saisonnalité mensuelle disparaît,
+ * la trajectoire reste. Les mois où une série manque sont laissés tels quels.
+ */
+export function smoothBase100(rows: readonly Base100Row[], window = 3): readonly Base100Row[] {
+  if (window <= 1 || rows.length === 0) return rows;
+  const codes = new Set<string>();
+  for (const row of rows) for (const key of Object.keys(row)) if (key !== 'month') codes.add(key);
+  const smoothed: Record<string, readonly number[]> = {};
+  for (const code of codes) {
+    const values = rows.map((row) => (typeof row[code] === 'number' ? row[code] : Number.NaN));
+    smoothed[code] = movingAverage(values, window);
+  }
+  return rows.map((row, index): Base100Row => {
+    const out: Record<string, number | string> = { month: row.month };
+    for (const code of codes) {
+      const value = smoothed[code]?.[index];
+      if (typeof row[code] === 'number' && value !== undefined && Number.isFinite(value)) {
+        out[code] = Math.round(value * 10) / 10;
+      }
+    }
+    return out as Base100Row;
+  });
+}
+
+/**
+ * Régions à mettre en avant dans la comparaison : les deux trajectoires les plus fortes et les
+ * deux plus faibles au dernier mois. Le reste forme la trame grise.
+ */
+export function pickRegionHighlights(
+  rows: readonly Base100Row[],
+  codes: readonly string[],
+  count = 2,
+): readonly string[] {
+  const last = rows.at(-1);
+  if (last === undefined) return [];
+  const ranked = codes
+    .map((code) => ({ code, value: last[code] }))
+    .filter((entry): entry is { code: string; value: number } => typeof entry.value === 'number')
+    .toSorted((a, b) => b.value - a.value);
+  if (ranked.length <= count * 2) return ranked.map((r) => r.code);
+  return [...ranked.slice(0, count), ...ranked.slice(-count)].map((r) => r.code);
 }
 
 /** Communes qui montent et communes qui baissent, sur variation annuelle. */

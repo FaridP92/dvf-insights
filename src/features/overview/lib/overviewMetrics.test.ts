@@ -7,6 +7,9 @@ import {
   toBase100,
   toRegionBase100,
   topMovers,
+  smoothBase100,
+  pickRegionHighlights,
+  type Base100Row,
   type MonthlyPoint,
 } from './overviewMetrics';
 
@@ -184,6 +187,28 @@ describe('toBase100', () => {
   });
 });
 
+describe('smoothBase100 et pickRegionHighlights', () => {
+  const rows: readonly Base100Row[] = [
+    { month: '2024-01', a: 100, b: 100, c: 100, d: 100, e: 100 },
+    { month: '2024-02', a: 110, b: 90, c: 100, d: 102, e: 98 },
+    { month: '2024-03', a: 120, b: 80, c: 100, d: 104, e: 96 },
+  ];
+
+  it('lisse par moyenne mobile centrée en arrondissant au dixième', () => {
+    const smoothed = smoothBase100(rows, 3);
+    expect(smoothed[1]?.a).toBe(110);
+    expect(smoothed[0]?.a).toBe(105);
+    expect(smoothed[2]?.b).toBe(85);
+    expect(smoothBase100(rows, 1)).toBe(rows);
+  });
+
+  it('retient les deux plus fortes et les deux plus faibles trajectoires', () => {
+    expect(pickRegionHighlights(rows, ['a', 'b', 'c', 'd', 'e'])).toEqual(['a', 'd', 'e', 'b']);
+    expect(pickRegionHighlights(rows, ['a', 'b'])).toEqual(['a', 'b']);
+    expect(pickRegionHighlights([], ['a'])).toEqual([]);
+  });
+});
+
 describe('toRegionBase100', () => {
   const departments: readonly Department[] = [
     { code: '75', name: 'Paris', region: 'Île-de-France' },
@@ -206,6 +231,22 @@ describe('toRegionBase100', () => {
     expect(idf?.points[0]?.transactions).toBe(400);
     // (10000*100 + 6000*300) / 400
     expect(idf?.points[0]?.medianPricePerSqm).toBeCloseTo(7000, 6);
+  });
+
+  it('exclut les régions d outre-mer par défaut, et les garde sur demande', () => {
+    const withDom: readonly Department[] = [
+      ...departments,
+      { code: '971', name: 'Guadeloupe', region: 'Guadeloupe' },
+    ];
+    const rowsWithDom = [
+      ...rows,
+      stat({ month: '2024-01', departmentCode: '971', transactions: 50, medianPricePerSqm: 3000 }),
+    ];
+    expect(toRegionBase100(rowsWithDom, withDom).map((r) => r.code)).toEqual([
+      'Hauts-de-France',
+      'Île-de-France',
+    ]);
+    expect(toRegionBase100(rowsWithDom, withDom, ALL_FILTER, { metropolitanOnly: false })).toHaveLength(3);
   });
 
   it('ignore les départements absents du référentiel', () => {

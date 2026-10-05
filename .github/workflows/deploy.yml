@@ -1,0 +1,84 @@
+name: CI/CD
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# Un seul déploiement à la fois, sans annuler un déploiement en cours.
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Check (typecheck + lint + test)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+
+  deploy:
+    name: Build et déploiement VPS
+    needs: check
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      SITE_URL: https://dvf.lyfh.fr
+      DEPLOY_BASE: /var/www/vhosts/lyfh.fr/dvf.lyfh.fr
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Build
+        run: npm run build
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+
+      - name: Configurer SSH
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "${{ secrets.DEPLOY_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
+          cat > ~/.ssh/config <<EOF
+          Host vps
+            HostName ${{ secrets.DEPLOY_HOST }}
+            User ${{ secrets.DEPLOY_USER }}
+            IdentityFile ~/.ssh/deploy_key
+            IdentitiesOnly yes
+            StrictHostKeyChecking yes
+          EOF
+
+      - name: Envoyer la release
+        run: |
+          REL="$(date -u +%Y%m%d%H%M%S)-${GITHUB_SHA::7}"
+          echo "RELEASE=$REL" >> "$GITHUB_ENV"
+          rsync -az --delete dist/ "vps:$DEPLOY_BASE/releases/$REL/"
+
+      - name: Activer la release
+        run: ssh vps "bash -s -- activate $RELEASE" < deploy/release.sh
+
+      - name: Smoke test (rollback automatique en cas d'échec)
+        run: |
+          set -e
+          fail() { echo "::error::$1, rollback"; ssh vps 'bash -s -- rollback' < deploy/release.sh; exit 1; }
+          html="$(curl -fsS --retry 3 --retry-delay 2 "$SITE_URL/")" || fail "page d'accueil KO"
+          echo "$html" | grep -q 'id="root"' || fail "index.html inattendu"
+          asset="$(echo "$html" | grep -oE '/assets/[^"]+\.js' | head -1)"
+          [ -n "$asset" ] && curl -fsS -o /dev/null "$SITE_URL$asset" || fail "asset $asset KO"
+          curl -fsS -o /dev/null "$SITE_URL/explorer" || fail "route /explorer KO"

@@ -13,7 +13,7 @@ supabase functions deploy ingest-dvf
 supabase functions deploy pipeline-status
 ```
 
-Puis renseigner `VITE_SUPABASE_URL` et `VITE_SUPABASE_ANON_KEY` (Vercel > Settings > Environment Variables) : le front bascule automatiquement du mode mock au mode live.
+Puis renseigner `VITE_SUPABASE_URL` et `VITE_SUPABASE_ANON_KEY` (GitHub > Settings > Secrets, pour le build CI ; `.env.local` en local) : le front bascule automatiquement du mode mock au mode live.
 
 ## Sécurité
 

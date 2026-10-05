@@ -48,7 +48,7 @@ const STAGES: readonly Stage[] = [
     id: 'front',
     icon: MonitorCheck,
     title: 'Front React',
-    description: 'Build Vite servi par Vercel, lecture seule via PostgREST.',
+    description: 'Build Vite servi par nginx (VPS), lecture seule via PostgREST.',
   },
 ];
 

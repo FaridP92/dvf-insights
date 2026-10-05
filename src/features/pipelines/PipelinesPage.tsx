@@ -71,7 +71,7 @@ export default function PipelinesPage() {
           <>
             <Badge tone={dataSource === 'supabase' ? 'accent' : 'neutral'}>
               <Database className="size-3" aria-hidden />
-              {dataSource === 'supabase' ? 'Supabase' : 'Données simulées'}
+              {dataSource === 'supabase' ? 'Base live' : 'Données simulées'}
             </Badge>
             <span className="tabular text-xs text-fg-subtle" aria-live="off">
               {paused ? 'Actualisation en pause' : `Actualisation dans ${String(secondsLeft)} s`}
@@ -148,7 +148,7 @@ export default function PipelinesPage() {
 
         <Card
           title="Santé PostgreSQL"
-          subtitle="Instantané de l'instance Supabase qui sert les vues matérialisées."
+          subtitle="Instantané de la base PostgreSQL qui sert les vues matérialisées."
         >
           {health.status === 'loading' && <ChartSkeleton height={200} />}
           {health.status === 'error' && (

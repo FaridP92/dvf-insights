@@ -48,7 +48,7 @@ export function Sidebar() {
         <div className="flex items-center justify-between">
           <span className="text-[11px] uppercase tracking-wide text-fg-subtle">Source</span>
           <Badge tone={dataSource === 'supabase' ? 'accent' : 'info'} pulse={dataSource === 'supabase'}>
-            {dataSource === 'supabase' ? 'Supabase live' : 'Mock typé'}
+            {dataSource === 'supabase' ? 'Base live' : 'Mock typé'}
           </Badge>
         </div>
         <a

@@ -19,8 +19,8 @@ jobs:
     name: Check (typecheck + lint + test)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
@@ -37,8 +37,8 @@ jobs:
       SITE_URL: https://dvf.lyfh.fr
       DEPLOY_BASE: /var/www/vhosts/lyfh.fr/dvf.lyfh.fr
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm

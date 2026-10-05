@@ -2,12 +2,12 @@
 
 Plateforme d'analyse du marché immobilier français fondée sur les données ouvertes **DVF**
 (Demandes de Valeurs Foncières, data.gouv.fr). Vitrine technique : front React typé strict,
-pipeline ETL n8n, base PostgreSQL Supabase, déploiement continu Vercel.
+pipeline ETL n8n, base PostgreSQL Supabase, déploiement continu GitHub Actions sur VPS (Plesk, nginx).
 
 | | |
 |---|---|
 | Dépôt | https://github.com/FaridP92/dvf-insights |
-| Production | https://dvf-insights.vercel.app |
+| Production | https://dvf.lyfh.fr |
 | Supabase | projet `ntfeumptvwcrwoxzprbb` (eu-west-3), API https://ntfeumptvwcrwoxzprbb.supabase.co |
 | Workflow n8n | https://n8n.lyfh.fr/workflow/PR0xIuYH9y68zOVc |
 | Stratégie data | [docs/DATA_STRATEGY.md](docs/DATA_STRATEGY.md) |
@@ -18,7 +18,7 @@ pipeline ETL n8n, base PostgreSQL Supabase, déploiement continu Vercel.
 - **Front** : React 18 · Vite 8 · TypeScript 6 strict (`noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`) · Tailwind CSS v4 · Recharts 3 · Lucide · React Router 7
 - **Data** : Supabase (PostgreSQL 15, Edge Functions Deno, RLS) · n8n (orchestration ETL) · Zod (validation aux frontières)
 - **Qualité** : Vitest · oxlint · Prettier
-- **Hébergement** : Vercel (SPA, en-têtes de sécurité, cache immuable des assets)
+- **Hébergement** : VPS OVH sous Plesk, nginx sert la SPA statique (en-têtes de sécurité, cache immuable des assets, Brotli), Cloudflare en proxy (SSL Full strict)
 
 ## Pages
 
@@ -116,7 +116,11 @@ Scripts : `dev` · `build` · `preview` · `typecheck` · `lint` · `test` · `t
 
 ## CI/CD
 
-Chaque push sur `main` déclenche un build Vercel (framework Vite, `vercel.json` : rewrites SPA, cache immuable `/assets`, `X-Frame-Options`, `nosniff`, `Referrer-Policy`). Variables définies dans Vercel (tous environnements) : `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` (clé publique, prévue pour être exposée au navigateur ; l'accès aux données est borné par la RLS).
+Chaque push sur `main` déclenche le workflow [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml) : `npm run check` (typecheck + lint + test), build avec les secrets `VITE_SUPABASE_URL` et `VITE_SUPABASE_ANON_KEY` (clé publique, prévue pour être exposée au navigateur ; l'accès aux données est borné par la RLS), puis `rsync` par SSH de `dist/` vers `releases/<horodatage>-<sha>/` sur le VPS. Le lien `current` (docroot Plesk de https://dvf.lyfh.fr) bascule ensuite de façon atomique, un smoke test vérifie le site et déclenche un rollback automatique en cas d'échec. Les 5 dernières releases sont conservées.
+
+- **Config serveur** : [`deploy/nginx/vhost_nginx.conf`](deploy/nginx/vhost_nginx.conf) (fallback SPA vers `index.html`, `/assets` en cache immuable, `index.html` sans cache long, en-têtes `X-Frame-Options`, `nosniff`, `Referrer-Policy`, Brotli/gzip), installée dans `/var/www/vhosts/system/dvf.lyfh.fr/conf/` côté Plesk.
+- **Secrets GitHub** : `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `DEPLOY_SSH_KEY` (clé dédiée), `DEPLOY_KNOWN_HOSTS`, `DEPLOY_HOST`, `DEPLOY_USER`.
+- **Rollback manuel** : `ssh <user>@<hôte> 'bash -s -- rollback' < deploy/release.sh` (`list` pour voir les releases).
 
 ## Conventions
 

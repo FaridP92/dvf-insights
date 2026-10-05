@@ -2,13 +2,13 @@
 
 Plateforme d'analyse du marché immobilier français fondée sur les données ouvertes **DVF**
 (Demandes de Valeurs Foncières, data.gouv.fr). Vitrine technique : front React typé strict,
-pipeline ETL n8n, base PostgreSQL Supabase, déploiement continu GitHub Actions sur VPS (Plesk, nginx).
+pipeline ETL n8n, base PostgreSQL 17 auto-hébergée (API PostgREST compatible Supabase), déploiement continu GitHub Actions sur VPS (Plesk, nginx).
 
 | | |
 |---|---|
 | Dépôt | https://github.com/FaridP92/dvf-insights |
 | Production | https://dvf.lyfh.fr |
-| Supabase | projet `ntfeumptvwcrwoxzprbb` (eu-west-3), API https://ntfeumptvwcrwoxzprbb.supabase.co |
+| Backend données | Postgres 17 + PostgREST + Edge Functions Deno en Docker sur le VPS ([deploy/backend](deploy/backend)), API https://dvf.lyfh.fr/rest/v1 |
 | Workflow n8n | https://n8n.lyfh.fr/workflow/PR0xIuYH9y68zOVc |
 | Stratégie data | [docs/DATA_STRATEGY.md](docs/DATA_STRATEGY.md) |
 | Pipeline | [docs/N8N_PIPELINE.md](docs/N8N_PIPELINE.md) · [supabase/README.md](supabase/README.md) |
@@ -16,7 +16,7 @@ pipeline ETL n8n, base PostgreSQL Supabase, déploiement continu GitHub Actions 
 ## Stack
 
 - **Front** : React 18 · Vite 8 · TypeScript 6 strict (`noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`) · Tailwind CSS v4 · Recharts 3 · Lucide · React Router 7
-- **Data** : Supabase (PostgreSQL 15, Edge Functions Deno, RLS) · n8n (orchestration ETL) · Zod (validation aux frontières)
+- **Data** : PostgreSQL 17 + PostgREST (contrat Supabase : `/rest/v1`, `/functions/v1`, RLS, `pg_cron`), fonctions Deno · n8n (orchestration ETL) · Zod (validation aux frontières)
 - **Qualité** : Vitest · oxlint · Prettier
 - **Hébergement** : VPS OVH sous Plesk, nginx sert la SPA statique (en-têtes de sécurité, cache immuable des assets, Brotli), Cloudflare en proxy (SSL Full strict)
 
@@ -60,7 +60,7 @@ docs/             stratégie data, pipeline n8n
 
 ## Modèle de données
 
-Le plan Supabase Free plafonne à 500 Mo, ce qui interdit de conserver la France entière au
+Le stockage frugal vient du plan Supabase Free (500 Mo) d'origine ; il est conservé car il interdit de conserver la France entière au
 grain de la mutation sur trois ans. Le stockage est donc **frugal et à trois couches**, chacune
 avec sa propre rétention.
 
@@ -127,3 +127,15 @@ Chaque push sur `main` déclenche le workflow [`.github/workflows/deploy.yml`](.
 - Conventional Commits (`feat:`, `fix:`, `chore:`, `docs:`, `test:`).
 - Nommage explicite (`usePriceMedianByMonth`, jamais `useData`), types `readonly`, pas de `any`.
 - Textes UI en français, chiffres tabulaires, une seule couleur d'accent.
+
+## Backend de données (VPS)
+
+Le projet Supabase d'origine a été remplacé par une pile Docker équivalente dans `/opt/dvf-backend` (sources dans [`deploy/backend`](deploy/backend)) :
+
+- `db` : Postgres 17 avec `pg_cron`, rôles `anon` / `authenticated` / `service_role`, migrations `supabase/migrations/0001` à `0009` (liées à `127.0.0.1:54320`).
+- `rest` : PostgREST, exposé par nginx sur `https://dvf.lyfh.fr/rest/v1/` (même origine que le site, pas de CORS). Clés JWT HS256 signées avec `JWT_SECRET`.
+- `fn-ingest-dvf` et `fn-pipeline-status` : les Edge Functions du dépôt exécutées telles quelles sous Deno, exposées sur `/functions/v1/` et appelées par n8n.
+- Secrets dans `/opt/dvf-backend/deploy/backend/.env` (jamais versionné, modèle `.env.example`).
+- **Sauvegardes** : `pg_dump` quotidien à 03h30 UTC dans `/var/backups/dvf` (14 jours), script `deploy/backend/tools/backup.sh`, restauration documentée en en-tête du script.
+- **Migration** : `deploy/backend/tools/migrate-from-supabase.py` a copié les 9 tables publiques depuis Supabase (comptes et empreintes identiques) avant la suppression du projet.
+- **Mise à jour du backend** : `rsync` de `deploy/backend` et `supabase/` vers `/opt/dvf-backend`, puis `docker compose up -d` ; une nouvelle migration s'applique avec `docker compose exec -T db psql -U postgres -d dvf < supabase/migrations/NNNN_xxx.sql`.

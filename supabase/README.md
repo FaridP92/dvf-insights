@@ -1,6 +1,6 @@
 # Supabase : déploiement
 
-État actuel : projet `ntfeumptvwcrwoxzprbb` (région eu-west-3) créé le 28 août 2026, migrations 0001 à 0009 appliquées (schéma, RPC, durcissement, purges, maintenance asynchrone pg_cron, stockage frugal national, VACUUM quotidien), Edge Functions `ingest-dvf` et `pipeline-status` déployées (auth custom, `verify_jwt` désactivé). Reste à poser le secret `N8N_WEBHOOK_SECRET` (Dashboard > Edge Functions > Secrets) et le même secret dans le credential Header Auth n8n.
+Historique : le projet Supabase `ntfeumptvwcrwoxzprbb` (eu-west-3, créé le 28 août 2026) a été remplacé le 5 octobre 2026 par un backend équivalent sur le VPS (voir `deploy/backend` et la section « Backend de données » du README racine). Ce dossier reste la source des migrations et des fonctions, exécutées par ce backend. Les consignes ci-dessous décrivent le déploiement Supabase d'origine : migrations 0001 à 0009 appliquées (schéma, RPC, durcissement, purges, maintenance asynchrone pg_cron, stockage frugal national, VACUUM quotidien), Edge Functions `ingest-dvf` et `pipeline-status` déployées (auth custom, `verify_jwt` désactivé). Reste à poser le secret `N8N_WEBHOOK_SECRET` (Dashboard > Edge Functions > Secrets) et le même secret dans le credential Header Auth n8n.
 
 Pour redéployer ou répliquer :
 

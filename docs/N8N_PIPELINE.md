@@ -39,9 +39,9 @@ intégralement ce millésime à chaque run : les runs sont idempotents, départe
 
 ## Configuration à faire une fois
 
-1. Nœud "Parametres du run" : `supabaseUrl` est déjà renseigné (`https://ntfeumptvwcrwoxzprbb.supabase.co`).
+1. Nœud "Parametres du run" : `supabaseUrl` est déjà renseigné (`https://dvf.lyfh.fr`, backend auto-hébergé sur le VPS depuis le 5 octobre 2026).
 2. Credential **Header Auth** nommé "Supabase webhook secret (x-webhook-secret)" :
-   nom d'en-tête `x-webhook-secret`, valeur = le secret `N8N_WEBHOOK_SECRET` des Edge Functions.
+   nom d'en-tête `x-webhook-secret`, valeur = le secret `N8N_WEBHOOK_SECRET` du `.env` du backend (`/opt/dvf-backend/deploy/backend/.env`).
    L'assigner aux 3 nœuds HTTP qui appellent Supabase (pas au téléchargement data.gouv).
 3. Activer le workflow (fait le 28 août 2026 : planification mensuelle active).
 

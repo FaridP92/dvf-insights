@@ -74,6 +74,8 @@ jobs:
         run: ssh vps "bash -s -- activate $RELEASE" < deploy/release.sh
 
       - name: Smoke test (rollback automatique en cas d'échec)
+        env:
+          ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
         run: |
           set -e
           fail() { echo "::error::$1, rollback"; ssh vps 'bash -s -- rollback' < deploy/release.sh; exit 1; }
@@ -82,3 +84,5 @@ jobs:
           asset="$(echo "$html" | grep -oE '/assets/[^"]+\.js' | head -1)"
           [ -n "$asset" ] && curl -fsS -o /dev/null "$SITE_URL$asset" || fail "asset $asset KO"
           curl -fsS -o /dev/null "$SITE_URL/explorer" || fail "route /explorer KO"
+          # L'API de données (PostgREST, même origine) doit répondre avec la clé anon embarquée dans le bundle.
+          curl -fsS -o /dev/null "$SITE_URL/rest/v1/departments?select=code&limit=1" -H "apikey: $ANON_KEY" -H "Authorization: Bearer $ANON_KEY" || fail "API /rest/v1 KO"

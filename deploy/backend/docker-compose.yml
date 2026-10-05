@@ -47,7 +47,7 @@ services:
       - "127.0.0.1:3010:3000"
 
   fn-ingest-dvf:
-    image: denoland/deno:2.1.4
+    image: denoland/deno:2.5.6
     restart: unless-stopped
     working_dir: /fn/ingest-dvf
     command: ["run", "-A", "index.ts"]
@@ -66,7 +66,7 @@ services:
       - "127.0.0.1:8101:8000"
 
   fn-pipeline-status:
-    image: denoland/deno:2.1.4
+    image: denoland/deno:2.5.6
     restart: unless-stopped
     working_dir: /fn/pipeline-status
     command: ["run", "-A", "index.ts"]
